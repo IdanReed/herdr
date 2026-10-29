@@ -29,6 +29,7 @@ const HERDR_UPDATE_COMMAND: &str = "herdr update";
 const HOMEBREW_UPDATE_COMMAND: &str = "brew update && brew upgrade herdr";
 const MISE_UPDATE_COMMAND: &str = "mise upgrade herdr";
 const NIX_UPDATE_COMMAND: &str = "update through Nix";
+const SCOOP_UPDATE_COMMAND: &str = "scoop update herdr";
 const MISE_INSTALLS_DIR_ENV: &str = "MISE_INSTALLS_DIR";
 const FAKE_UPDATE_VERSION_ENV: &str = "HERDR_FAKE_UPDATE_VERSION";
 const FAKE_UPDATE_NOTES_VERSION_ENV: &str = "HERDR_FAKE_UPDATE_NOTES_VERSION";
@@ -1935,6 +1936,8 @@ pub(crate) fn update_install_command() -> &'static str {
         MISE_UPDATE_COMMAND
     } else if is_nix_managed_install() {
         NIX_UPDATE_COMMAND
+    } else if is_scoop_managed_install() {
+        SCOOP_UPDATE_COMMAND
     } else {
         HERDR_UPDATE_COMMAND
     }
@@ -1983,6 +1986,14 @@ fn is_mise_managed_install() -> bool {
     is_mise_managed_exe_path_following_links(&current_exe)
 }
 
+fn is_scoop_managed_install() -> bool {
+    let Ok(current_exe) = env::current_exe() else {
+        return false;
+    };
+
+    is_scoop_managed_exe_path(&current_exe)
+}
+
 pub(crate) fn preview_channel_rejection_for_current_install() -> Option<&'static str> {
     let Ok(current_exe) = env::current_exe() else {
         return None;
@@ -1999,6 +2010,8 @@ pub(crate) fn package_manager_channel_update_guidance_for_current_install() -> O
         Some("Use `mise upgrade herdr` to update mise installs.")
     } else if is_nix_managed_install() {
         Some("Update through Nix to update Nix-managed Herdr installs.")
+    } else if is_scoop_managed_install() {
+        Some("Use `scoop update herdr` to update Scoop installs.")
     } else {
         None
     }
@@ -2015,6 +2028,10 @@ fn preview_channel_rejection_for_exe_path(path: &Path) -> Option<&'static str> {
         )
     } else if is_nix_store_exe_path_following_links(path) {
         Some("preview channel is only available for direct Herdr installs; Nix installs update through Nix")
+    } else if is_scoop_managed_exe_path(path) {
+        Some(
+            "preview channel is only available for direct Herdr installs; Scoop installs update through `scoop update herdr`",
+        )
     } else {
         None
     }
@@ -2061,6 +2078,35 @@ fn is_mise_managed_exe_path_following_links(path: &Path) -> bool {
 
 fn is_nix_store_exe_path(path: &Path) -> bool {
     path.starts_with("/nix/store")
+}
+
+/// Scoop keeps each app under `<root>\apps\<app>\<version>`, where the root
+/// is `%SCOOP%`, `%SCOOP_GLOBAL%`, or a `scoop` directory by default.
+fn is_scoop_managed_exe_path(path: &Path) -> bool {
+    let roots = ["SCOOP", "SCOOP_GLOBAL"]
+        .into_iter()
+        .filter_map(env::var_os)
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    is_scoop_managed_exe_path_under(path, &roots)
+}
+
+fn is_scoop_managed_exe_path_under(path: &Path, roots: &[PathBuf]) -> bool {
+    let normalize = |path: &Path| {
+        let mut text = path
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_ascii_lowercase();
+        if !text.ends_with('/') {
+            text.push('/');
+        }
+        text
+    };
+    let path = normalize(path);
+    path.contains("/scoop/apps/")
+        || roots
+            .iter()
+            .any(|root| path.starts_with(&format!("{}apps/", normalize(root))))
 }
 
 fn is_mise_managed_exe_path(path: &Path) -> bool {
@@ -2214,6 +2260,17 @@ pub fn self_update(options: SelfUpdateOptions) -> Result<Version, String> {
         return Err(
             "self-update is disabled for Nix installs; update with `nix profile upgrade` or update the flake input that provides Herdr".into(),
         );
+    }
+
+    if is_scoop_managed_install() {
+        if channel == UpdateChannel::Preview {
+            return Err(
+                "self-update is disabled for Scoop installs; preview is only available for direct Herdr installs".into(),
+            );
+        }
+        return Err(format!(
+            "self-update is disabled for Scoop installs; run `{SCOOP_UPDATE_COMMAND}`"
+        ));
     }
 
     if running_inside_herdr() {
@@ -2467,6 +2524,11 @@ pub fn auto_update(events: tokio::sync::mpsc::Sender<crate::events::AppEvent>) {
     let nix_managed_install = is_nix_managed_install();
     if nix_managed_install && configured_channel == UpdateChannel::Preview {
         crate::logging::update_check_failed("preview channel is not available for Nix installs");
+        return;
+    }
+
+    if is_scoop_managed_install() && configured_channel == UpdateChannel::Preview {
+        crate::logging::update_check_failed("preview channel is not available for Scoop installs");
         return;
     }
 
@@ -3155,6 +3217,30 @@ mod tests {
 
         assert!(is_nix_store_exe_path(path));
         assert!(is_package_manager_managed_exe_path(path));
+    }
+
+    #[test]
+    fn scoop_app_paths_are_detected_under_default_and_configured_roots() {
+        let default_root = Path::new(r"C:\Users\me\scoop\apps\herdr\current\herdr.exe");
+        let global_root = Path::new(r"C:\ProgramData\scoop\apps\herdr\0.9.5\herdr.exe");
+        let custom_root = Path::new(r"D:\Tools\apps\herdr\current\herdr.exe");
+        let direct = Path::new(r"C:\Users\me\AppData\Local\herdr\bin\herdr.exe");
+
+        assert!(is_scoop_managed_exe_path_under(default_root, &[]));
+        assert!(is_scoop_managed_exe_path_under(global_root, &[]));
+        assert!(!is_scoop_managed_exe_path_under(custom_root, &[]));
+        assert!(is_scoop_managed_exe_path_under(
+            custom_root,
+            &[PathBuf::from(r"d:\tools\")]
+        ));
+        assert!(!is_scoop_managed_exe_path_under(
+            direct,
+            &[PathBuf::from(r"D:\Tools")]
+        ));
+        assert_eq!(
+            update_install_instruction(SCOOP_UPDATE_COMMAND),
+            "detach, run `scoop update herdr`, then run Herdr again to reconnect"
+        );
     }
 
     #[test]
