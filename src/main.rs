@@ -362,6 +362,9 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Blank rows between agent entries. Set to 1 to restore the previous spacing.
 # row_gap = 0
 # rows = [["state_icon", "machine", "workspace", "tab"], ["agent"]]
+# List agents under a heading for each space while agent_panel_sort is "spaces".
+# Rows under a heading drop workspace and machine; the default rows become one line.
+# group_by_space = false
 # Optional canonical agent IDs replace the default rows for matching agents.
 # [ui.sidebar.agents.rows_by_agent]
 # claude = [["state_icon", "machine", "workspace", "tab"], ["terminal_title_stripped"], ["agent"]]

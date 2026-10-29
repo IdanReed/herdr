@@ -427,30 +427,57 @@ pub struct AgentsSidebarConfig {
     #[serde(default, deserialize_with = "deserialize_rows_by_agent")]
     pub rows_by_agent: BTreeMap<String, AgentSidebarRows>,
     pub row_gap: u16,
+    /// Show a heading for each space above its agents while the panel sorts by spaces.
+    pub group_by_space: bool,
 }
 
+const DEFAULT_AGENT_ROWS: [&[AgentSidebarToken]; 2] = [
+    &[
+        AgentSidebarToken::StateIcon,
+        AgentSidebarToken::Machine,
+        AgentSidebarToken::Workspace,
+        AgentSidebarToken::Tab,
+    ],
+    &[AgentSidebarToken::Agent],
+];
+
 impl AgentsSidebarConfig {
-    pub(crate) fn rows_for_agent(&self, agent: Option<Agent>) -> &AgentSidebarRows {
-        agent
-            .and_then(|agent| self.rows_by_agent.get(crate::detect::agent_label(agent)))
-            .unwrap_or(&self.rows)
+    /// Under a space heading the default layout shrinks to one line, because
+    /// the heading already names the space. Custom layouts stay as written.
+    pub(crate) fn rows_for_agent(
+        &self,
+        agent: Option<Agent>,
+        under_heading: bool,
+    ) -> std::borrow::Cow<'_, AgentSidebarRows> {
+        if let Some(rows) =
+            agent.and_then(|agent| self.rows_by_agent.get(crate::detect::agent_label(agent)))
+        {
+            return std::borrow::Cow::Borrowed(rows);
+        }
+        let default_layout = self.rows.len() == DEFAULT_AGENT_ROWS.len()
+            && self
+                .rows
+                .iter()
+                .zip(DEFAULT_AGENT_ROWS)
+                .all(|(row, default)| row.as_slice() == default);
+        if under_heading && default_layout {
+            return std::borrow::Cow::Owned(vec![vec![
+                AgentSidebarToken::StateIcon,
+                AgentSidebarToken::Agent,
+                AgentSidebarToken::Tab,
+            ]]);
+        }
+        std::borrow::Cow::Borrowed(&self.rows)
     }
 }
 
 impl Default for AgentsSidebarConfig {
     fn default() -> Self {
         Self {
-            rows: vec![
-                vec![
-                    AgentSidebarToken::StateIcon,
-                    AgentSidebarToken::Machine,
-                    AgentSidebarToken::Workspace,
-                    AgentSidebarToken::Tab,
-                ],
-                vec![AgentSidebarToken::Agent],
-            ],
+            rows: DEFAULT_AGENT_ROWS.iter().map(|row| row.to_vec()).collect(),
             rows_by_agent: BTreeMap::new(),
             row_gap: DEFAULT_SIDEBAR_ROW_GAP,
+            group_by_space: false,
         }
     }
 }
@@ -503,6 +530,11 @@ mod tests {
         );
         assert!(config.agents.rows_by_agent.is_empty());
         assert_eq!(config.agents.row_gap, 0);
+        assert!(!config.agents.group_by_space);
+        let grouped: crate::config::Config =
+            toml::from_str("[ui.sidebar.agents]\ngroup_by_space = true\n").expect("grouped");
+        assert!(grouped.ui.sidebar.agents.group_by_space);
+        assert!(grouped.collect_diagnostics().is_empty());
         assert_eq!(
             config.spaces.rows,
             vec![

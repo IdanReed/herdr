@@ -62,6 +62,8 @@ pub(crate) struct AgentTokenContext<'a> {
     pub(crate) terminal_title_stripped: Option<&'a str>,
     pub(crate) canonical_agent: Option<crate::detect::Agent>,
     pub(crate) tokens: &'a std::collections::HashMap<String, String>,
+    /// The row sits under a space heading that already names its space and machine.
+    pub(crate) under_heading: bool,
 }
 
 pub(crate) fn agent_rows(
@@ -70,7 +72,7 @@ pub(crate) fn agent_rows(
     state_text: &str,
 ) -> Vec<Vec<ResolvedToken>> {
     config
-        .rows_for_agent(context.canonical_agent)
+        .rows_for_agent(context.canonical_agent, context.under_heading)
         .iter()
         .filter_map(|row| {
             let resolved = row
@@ -81,6 +83,11 @@ pub(crate) fn agent_rows(
                         AgentSidebarToken::StateIcon => Some(ResolvedTokenKind::StateIcon),
                         AgentSidebarToken::StateText => {
                             Some(ResolvedTokenKind::StateText(state_text.to_string()))
+                        }
+                        AgentSidebarToken::Machine | AgentSidebarToken::Workspace
+                            if context.under_heading =>
+                        {
+                            None
                         }
                         AgentSidebarToken::Machine => context
                             .machine
@@ -227,7 +234,48 @@ mod tests {
             terminal_title_stripped: entry.terminal_title_stripped.as_deref(),
             canonical_agent: entry.canonical_agent,
             tokens: &entry.tokens,
+            under_heading: false,
         }
+    }
+
+    #[test]
+    fn rows_under_a_space_heading_leave_out_the_space_and_machine() {
+        let mut entry = entry();
+        entry.tab = Some("tests".into());
+        let mut heading = context(&entry);
+        heading.machine = Some("Local");
+        heading.under_heading = true;
+        let kinds = |rows: Vec<Vec<ResolvedToken>>| {
+            rows.into_iter()
+                .map(|row| row.into_iter().map(|token| token.kind).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        };
+
+        // The default two-line layout becomes one line per agent.
+        assert_eq!(
+            kinds(agent_rows(&AgentsSidebarConfig::default(), heading, "idle")),
+            vec![vec![
+                ResolvedTokenKind::StateIcon,
+                ResolvedTokenKind::Agent("pi".into()),
+                ResolvedTokenKind::Tab("tests".into()),
+            ]]
+        );
+
+        // A custom layout is kept, minus the tokens the heading shows.
+        let config: AgentsSidebarConfig = toml::from_str(
+            r#"rows = [["workspace", "machine"], ["state_text", "workspace", "agent"]]"#,
+        )
+        .expect("custom rows");
+        let mut heading = context(&entry);
+        heading.machine = Some("Local");
+        heading.under_heading = true;
+        assert_eq!(
+            kinds(agent_rows(&config, heading, "idle")),
+            vec![vec![
+                ResolvedTokenKind::StateText("idle".into()),
+                ResolvedTokenKind::Agent("pi".into()),
+            ]]
+        );
     }
 
     #[test]

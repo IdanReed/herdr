@@ -9,7 +9,7 @@ pub(super) fn render_collapsed(
     config: &ClientShellConfig,
     hits: &mut ShellHitMap,
 ) {
-    let rows = agent_rows(endpoints, active_endpoint_id, config);
+    let rows = agent_rows(endpoints, active_endpoint_id, config, false);
     for (index, row) in rows.into_iter().take(area.height as usize).enumerate() {
         let rect = Rect::new(area.x, area.y + index as u16, area.width, 1);
         if row.agent.focused {
@@ -61,7 +61,7 @@ pub(super) fn render_expanded(
     ) {
         return;
     }
-    let rows = agent_rows(endpoints, active_endpoint_id, config);
+    let rows = agent_list_items(endpoints, active_endpoint_id, config, agent_view_label);
     super::agent_sidebar::render_agent_list(
         buffer,
         area,
@@ -97,21 +97,25 @@ impl ClientShellState {
         if body_height == 0 {
             return;
         }
-        let rows = agent_rows(&self.endpoints, &self.active_endpoint_id, &self.config);
-        let Some(target) = rows
-            .iter()
-            .position(|row| &row.endpoint_id == endpoint_id && row.agent.pane_id == pane_id)
-        else {
+        let agent_view_label = self
+            .snapshot
+            .as_deref()
+            .and_then(|snapshot| snapshot.agent_view_label.as_deref());
+        let rows = agent_list_items(
+            &self.endpoints,
+            &self.active_endpoint_id,
+            &self.config,
+            agent_view_label,
+        );
+        let Some(target) = super::agent_sidebar::agent_list_position(&rows, |row| {
+            &row.endpoint_id == endpoint_id && row.agent.pane_id == pane_id
+        }) else {
             return;
         };
-        let heights = rows
-            .iter()
-            .map(|row| row.agent.rows.len().max(1).min(u16::MAX as usize) as u16)
-            .collect::<Vec<_>>();
-        let mut gaps = vec![self.config.agents.row_gap; rows.len()];
-        if let Some(last) = gaps.last_mut() {
-            *last = 0;
-        }
+        let (heights, gaps) =
+            super::agent_sidebar::agent_list_heights(&rows, self.config.agents.row_gap, |row| {
+                row.agent.rows.len()
+            });
         self.agent_scroll = super::scroll::list_scroll_start_to_reveal(
             &heights,
             &gaps,
@@ -129,10 +133,40 @@ struct EndpointAgentRow {
     agent: super::agent_sidebar::AgentRow,
 }
 
+fn agent_list_items(
+    endpoints: &[ClientShellEndpoint],
+    active_endpoint_id: &ClientEndpointId,
+    config: &ClientShellConfig,
+    agent_view_label: Option<&str>,
+) -> Vec<super::agent_sidebar::AgentListItem<EndpointAgentRow>> {
+    let grouped = super::agent_sidebar::groups_by_space(config, agent_view_label);
+    let rows = agent_rows(endpoints, active_endpoint_id, config, grouped);
+    if !grouped {
+        return rows
+            .into_iter()
+            .map(super::agent_sidebar::AgentListItem::Agent)
+            .collect();
+    }
+    let focused_workspace_id = endpoints
+        .iter()
+        .find(|endpoint| &endpoint.endpoint_id == active_endpoint_id)
+        .and_then(|endpoint| endpoint.snapshot.as_deref())
+        .and_then(|snapshot| snapshot.focused_workspace_id.as_deref());
+    super::agent_sidebar::with_space_headings(rows, |row| {
+        (
+            (row.endpoint_id.clone(), row.agent.workspace_id.clone()),
+            format!("{} · {}", row.machine_label, row.agent.workspace_label),
+            &row.endpoint_id == active_endpoint_id
+                && focused_workspace_id == Some(row.agent.workspace_id.as_str()),
+        )
+    })
+}
+
 fn agent_rows(
     endpoints: &[ClientShellEndpoint],
     active_endpoint_id: &ClientEndpointId,
     config: &ClientShellConfig,
+    under_heading: bool,
 ) -> Vec<EndpointAgentRow> {
     let mut rendered_rows = endpoints
         .iter()
@@ -147,6 +181,7 @@ fn agent_rows(
                             &agent.pane_id,
                             config,
                             Some(&endpoint.label),
+                            under_heading,
                         )
                     })
                     .map(|agent| ((endpoint.endpoint_id.clone(), agent.pane_id.clone()), agent))

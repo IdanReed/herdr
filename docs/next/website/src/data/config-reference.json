@@ -1085,6 +1085,12 @@
           ]
         },
         {
+          "key": "ui.sidebar.agents.group_by_space",
+          "type": "boolean",
+          "default": "false",
+          "description": "Show a heading for each space above its agents while the Agent panel uses the grouped (spaces) order. Agent rows under a heading leave out the workspace and machine tokens, and the default layout becomes one line per agent."
+        },
+        {
           "key": "ui.sidebar.agents.row_gap",
           "type": "integer",
           "default": "0",

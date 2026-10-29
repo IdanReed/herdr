@@ -12,9 +12,91 @@ use super::*;
 
 pub(super) struct AgentRow {
     pub(super) pane_id: String,
+    pub(super) workspace_id: String,
+    pub(super) workspace_label: String,
     pub(super) status: crate::api::schema::AgentStatus,
     pub(super) focused: bool,
+    pub(super) under_heading: bool,
     pub(super) rows: Vec<Vec<crate::ui::ResolvedToken>>,
+}
+
+/// One entry in the agents panel list.
+pub(super) enum AgentListItem<T> {
+    /// Names the space of the agents that follow it.
+    Heading {
+        label: String,
+        current: bool,
+    },
+    Agent(T),
+}
+
+/// Whether agents appear under a heading for their space. Headings follow the
+/// spaces order, so a priority sort or a custom agent view shows a flat list.
+pub(super) fn groups_by_space(config: &ClientShellConfig, agent_view_label: Option<&str>) -> bool {
+    config.agents.group_by_space
+        && config.agent_panel_sort == crate::config::AgentPanelSortConfig::Spaces
+        && agent_view_label.is_none()
+}
+
+/// Adds a heading wherever the space changes. `space` gives the key that
+/// identifies a row's space, the heading text, and whether it is focused.
+pub(super) fn with_space_headings<T, K: PartialEq>(
+    rows: Vec<T>,
+    space: impl Fn(&T) -> (K, String, bool),
+) -> Vec<AgentListItem<T>> {
+    let mut items = Vec::with_capacity(rows.len());
+    let mut previous = None;
+    for row in rows {
+        let (key, label, current) = space(&row);
+        if previous.as_ref() != Some(&key) {
+            items.push(AgentListItem::Heading { label, current });
+            previous = Some(key);
+        }
+        items.push(AgentListItem::Agent(row));
+    }
+    items
+}
+
+/// The list position that reveals the matching agent, starting at its space
+/// heading when it is the first agent under one.
+pub(super) fn agent_list_position<T>(
+    items: &[AgentListItem<T>],
+    matches: impl Fn(&T) -> bool,
+) -> Option<usize> {
+    let index = items
+        .iter()
+        .position(|item| matches!(item, AgentListItem::Agent(row) if matches(row)))?;
+    Some(
+        match index.checked_sub(1).map(|previous| &items[previous]) {
+            Some(AgentListItem::Heading { .. }) => index - 1,
+            _ => index,
+        },
+    )
+}
+
+/// Terminal rows each list item takes, and the blank rows after it.
+pub(super) fn agent_list_heights<T>(
+    items: &[AgentListItem<T>],
+    row_gap: u16,
+    row_lines: impl Fn(&T) -> usize,
+) -> (Vec<u16>, Vec<u16>) {
+    let heights = items
+        .iter()
+        .map(|item| match item {
+            AgentListItem::Heading { .. } => 1,
+            AgentListItem::Agent(row) => row_lines(row).max(1).min(u16::MAX as usize) as u16,
+        })
+        .collect();
+    let gaps = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| match item {
+            _ if index + 1 == items.len() => 0,
+            AgentListItem::Heading { .. } => 0,
+            AgentListItem::Agent(_) => row_gap,
+        })
+        .collect();
+    (heights, gaps)
 }
 
 pub(super) fn ordered_agent_pane_ids(
@@ -67,7 +149,7 @@ pub(super) fn render_agent_panel(
         return;
     }
 
-    let rows = agent_rows(snapshot, config, None);
+    let rows = agent_list_items(snapshot, config);
     render_agent_list(
         buffer,
         area,
@@ -154,7 +236,7 @@ pub(super) fn render_agent_panel_header(
 pub(super) fn render_agent_list<T>(
     buffer: &mut Buffer,
     area: Rect,
-    rows: &[T],
+    rows: &[AgentListItem<T>],
     empty_message: Option<&str>,
     config: &ClientShellConfig,
     agent_scroll: &mut usize,
@@ -186,21 +268,7 @@ pub(super) fn render_agent_list<T>(
         return;
     }
 
-    let row_heights = rows
-        .iter()
-        .map(|row| row_lines(row).max(1).min(u16::MAX as usize) as u16)
-        .collect::<Vec<_>>();
-    let gaps = rows
-        .iter()
-        .enumerate()
-        .map(|(index, _)| {
-            if index + 1 < rows.len() {
-                config.agents.row_gap
-            } else {
-                0
-            }
-        })
-        .collect::<Vec<_>>();
+    let (row_heights, gaps) = agent_list_heights(rows, config.agents.row_gap, row_lines);
     let metrics =
         super::scroll::list_scroll_metrics(&row_heights, &gaps, body.height, *agent_scroll);
     hits.agent_max_scroll = metrics.max_offset_from_bottom;
@@ -217,14 +285,13 @@ pub(super) fn render_agent_list<T>(
             break;
         }
         let rect = Rect::new(body.x, y, content_width, height);
-        render_row(buffer, rect, row, hits);
-        y = y
-            .saturating_add(height)
-            .saturating_add(if index + 1 < rows.len() {
-                config.agents.row_gap
-            } else {
-                0
-            });
+        match row {
+            AgentListItem::Heading { label, current } => {
+                render_space_heading(buffer, rect, label, *current, config);
+            }
+            AgentListItem::Agent(row) => render_row(buffer, rect, row, hits),
+        }
+        y = y.saturating_add(height).saturating_add(gaps[index]);
     }
 
     if show_scrollbar {
@@ -234,15 +301,26 @@ pub(super) fn render_agent_list<T>(
     }
 }
 
-pub(super) fn agent_rows(
+pub(super) fn agent_list_items(
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
-    machine: Option<&str>,
-) -> Vec<AgentRow> {
-    ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
+) -> Vec<AgentListItem<AgentRow>> {
+    let grouped = groups_by_space(config, snapshot.agent_view_label.as_deref());
+    let rows = ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
         .into_iter()
-        .filter_map(|pane_id| agent_row(snapshot, &pane_id, config, machine))
-        .collect()
+        .filter_map(|pane_id| agent_row(snapshot, &pane_id, config, None, grouped))
+        .collect::<Vec<_>>();
+    if !grouped {
+        return rows.into_iter().map(AgentListItem::Agent).collect();
+    }
+    let focused_workspace_id = snapshot.focused_workspace_id.as_deref();
+    with_space_headings(rows, |row| {
+        (
+            row.workspace_id.clone(),
+            row.workspace_label.clone(),
+            focused_workspace_id == Some(row.workspace_id.as_str()),
+        )
+    })
 }
 
 pub(super) fn agent_row(
@@ -250,6 +328,7 @@ pub(super) fn agent_row(
     pane_id: &str,
     config: &ClientShellConfig,
     machine: Option<&str>,
+    under_heading: bool,
 ) -> Option<AgentRow> {
     let agent = snapshot
         .agents
@@ -307,13 +386,17 @@ pub(super) fn agent_row(
             terminal_title_stripped: agent.terminal_title_stripped.as_deref(),
             canonical_agent,
             tokens: &tokens,
+            under_heading,
         },
         state_text,
     );
     Some(AgentRow {
         pane_id: agent.pane_id.clone(),
+        workspace_id: workspace.workspace_id.clone(),
+        workspace_label: workspace.label.clone(),
         status: agent.agent_status,
         focused: agent.focused,
+        under_heading,
         rows,
     })
 }
@@ -353,8 +436,9 @@ pub(super) fn render_agent_row(
     } else {
         row.rows.clone()
     };
+    let nested = usize::from(row.under_heading);
     for (index, tokens) in rows.iter().take(rect.height as usize).enumerate() {
-        let indent = if index == 0 { 1 } else { 3 };
+        let indent = if index == 0 { 1 } else { 3 } + nested;
         let mut spans = vec![ratatui::text::Span::raw(" ".repeat(indent))];
         spans.extend(crate::ui::resolved_token_spans(
             tokens,
@@ -371,6 +455,40 @@ pub(super) fn render_agent_row(
             buffer,
         );
     }
+}
+
+/// ` name ───────` across the row, brighter for the focused space.
+fn render_space_heading(
+    buffer: &mut Buffer,
+    rect: Rect,
+    label: &str,
+    current: bool,
+    config: &ClientShellConfig,
+) {
+    let palette = &config.palette;
+    let width = usize::from(rect.width);
+    let name = crate::ui::truncate_end(label, width.saturating_sub(3));
+    let (rule_x, _) = buffer.set_stringn(
+        rect.x,
+        rect.y,
+        format!(" {name} "),
+        width,
+        Style::default()
+            .fg(if current {
+                palette.text
+            } else {
+                palette.subtext0
+            })
+            .add_modifier(Modifier::BOLD),
+    );
+    let rule_width = rect.right().saturating_sub(rule_x);
+    buffer.set_stringn(
+        rule_x,
+        rect.y,
+        "─".repeat(usize::from(rule_width)),
+        usize::from(rule_width),
+        Style::default().fg(palette.surface_dim),
+    );
 }
 
 fn put_text(buffer: &mut Buffer, x: u16, y: u16, width: u16, text: &str, style: Style) {
