@@ -274,6 +274,16 @@ pub(super) enum ClientShellMode {
     Navigate,
     Resize,
     Copy,
+    Scope(ScopeMode),
+}
+
+/// A sticky mode whose movement keys act on one kind of item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ScopeMode {
+    Pane,
+    Tab,
+    Workspace,
+    Agent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1402,7 +1412,10 @@ impl ClientShellState {
             } else if active_keymap_changed
                 && matches!(
                     self.mode,
-                    ClientShellMode::Prefix | ClientShellMode::Navigate | ClientShellMode::Resize
+                    ClientShellMode::Prefix
+                        | ClientShellMode::Navigate
+                        | ClientShellMode::Resize
+                        | ClientShellMode::Scope(_)
                 )
             {
                 self.mode = ClientShellMode::Terminal;

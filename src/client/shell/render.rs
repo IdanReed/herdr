@@ -62,10 +62,10 @@ pub(super) fn render_mode_bar(
             ratatui::style::Color::Reset => palette.surface_dim,
             color => color,
         })
-        .bg(if mode == ClientShellMode::Resize {
-            palette.mauve
-        } else {
-            palette.accent
+        .bg(match mode {
+            ClientShellMode::Resize => palette.mauve,
+            ClientShellMode::Scope(scope) => scope.color(palette),
+            _ => palette.accent,
         })
         .add_modifier(Modifier::BOLD);
     let prefix = keybinds.primary_prefix_label();
@@ -190,6 +190,18 @@ pub(super) fn render_mode_bar(
                         (" copy  ".to_owned(), base),
                         (exit_keys.to_owned(), key),
                         (exit_label.to_owned(), base),
+                    ]);
+                }
+            }
+            ClientShellMode::Scope(scope) => {
+                segments.extend([
+                    (scope.label().to_owned(), mode_style),
+                    (" ".to_owned(), base),
+                ]);
+                for (keys, description) in scope.hints() {
+                    segments.extend([
+                        (format!(" {keys}"), key),
+                        (format!(" {description} "), base),
                     ]);
                 }
             }

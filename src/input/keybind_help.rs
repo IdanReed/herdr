@@ -92,6 +92,27 @@ pub(crate) fn keybind_help_groups(
             ],
         ),
         (
+            "modes",
+            vec![
+                entry(
+                    binding_label(&keybinds.pane_mode),
+                    "pane mode: hjkl focus, HJKL move, d/r split down/right",
+                ),
+                entry(
+                    binding_label(&keybinds.tab_mode),
+                    "tab mode: hjkl focus, HJKL move",
+                ),
+                entry(
+                    binding_label(&keybinds.workspace_mode),
+                    "spaces mode: hjkl focus, HJKL move, n new",
+                ),
+                entry(
+                    binding_label(&keybinds.agent_mode),
+                    "agents mode: hjkl focus",
+                ),
+            ],
+        ),
+        (
             "navigation",
             vec![
                 entry("esc", "back"),

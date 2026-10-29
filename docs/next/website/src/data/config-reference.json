@@ -842,6 +842,30 @@
           "description": "Toggle sidebar collapse."
         },
         {
+          "key": "keys.pane_mode",
+          "type": "keybinding",
+          "default": "\"ctrl+p\"",
+          "description": "Enter pane mode: h/j/k/l or arrows move focus, Shift moves the pane, d/r split down/right. Set to \"\" to send the key to the pane."
+        },
+        {
+          "key": "keys.tab_mode",
+          "type": "keybinding",
+          "default": "\"ctrl+t\"",
+          "description": "Enter tab mode: h/j/k/l or arrows move focus between tabs, Shift moves the tab. Set to \"\" to send the key to the pane."
+        },
+        {
+          "key": "keys.workspace_mode",
+          "type": "keybinding",
+          "default": "\"ctrl+s\"",
+          "description": "Enter spaces mode: h/j/k/l or arrows move focus between workspaces, Shift moves the workspace, n creates one. Set to \"\" to send the key to the pane."
+        },
+        {
+          "key": "keys.agent_mode",
+          "type": "keybinding",
+          "default": "\"ctrl+a\"",
+          "description": "Enter agents mode: h/j/k/l or arrows move focus between agents. Set to \"\" to send the key to the pane."
+        },
+        {
           "key": "keys.indexed.tabs",
           "type": "string",
           "default": "unset",

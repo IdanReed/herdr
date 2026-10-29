@@ -193,6 +193,15 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # resize_pane_right = ""  # optional, e.g. "ctrl+shift+alt+right"
 # toggle_sidebar = "prefix+b"
 
+# Modes stay open until esc, enter, or their key again. In every mode h/j/k/l or
+# the arrows move focus and shift+movement moves the focused item.
+# Creating an item (pane mode d/r, spaces mode n) returns to the terminal.
+# Set a mode to "" to free its key for the terminal.
+# pane_mode = "ctrl+p"       # d/r split down/right
+# tab_mode = "ctrl+t"
+# workspace_mode = "ctrl+s"  # n new workspace
+# agent_mode = "ctrl+a"      # movement only
+
 # Navigate-mode movement. These local shortcuts win while navigate mode is open.
 # They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, or 1..9 here.
 # navigate_workspace_up = "up"

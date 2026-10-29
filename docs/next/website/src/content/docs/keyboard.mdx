@@ -70,6 +70,31 @@ Pane input follows the keyboard modes requested by the app. Plain shells receive
 
 On non-Latin layouts, Ctrl-only shortcuts such as Ctrl+W can use the physical base key reported by a Kitty-capable host. Latin layout characters, Ctrl+Shift chords, and AltGr keep their layout meaning. Terminals that do not report physical keys cannot provide the same layout-independent shortcuts.
 
+## Modes
+
+Modes keep Herdr listening after one key, so you can move around without pressing the prefix each time. While a mode is open, the bar at the bottom of the screen names it and lists its keys.
+
+| Mode | Key | Extra keys |
+| --- | --- | --- |
+| Pane | `ctrl+p` | `d` / `r` split down / right |
+| Tab | `ctrl+t` | none |
+| Spaces | `ctrl+s` | `n` new workspace |
+| Agents | `ctrl+a` | none |
+
+In every mode, `h/j/k/l` or the arrow keys move focus. Add Shift to move the focused pane, tab, or workspace instead. Tabs move left and right, while workspaces and agents move up and down the sidebar. The Agents panel sets the agent order, so agents mode only moves focus.
+
+A mode stays open until you press Esc, Enter, or its key again. Pressing another mode's key switches to that mode. Splitting a pane or creating a workspace returns to the terminal so you can type into it right away. The prefix still works while a mode is open.
+
+These keys reach Herdr before the program in the pane, so shells lose `ctrl+a` (start of line), `ctrl+p` (previous command), `ctrl+t`, and `ctrl+s` while they are bound. Use `pane_mode`, `tab_mode`, `workspace_mode`, and `agent_mode` to rebind a mode or give its key back:
+
+```toml
+[keys]
+agent_mode = ""            # ctrl+a goes to the shell again
+pane_mode = "ctrl+alt+p"
+```
+
+If you set `prefix` or another binding to one of these keys, your binding is used instead of the mode's default.
+
 ## Editing text fields
 
 Herdr's naming dialogs, worktree branch fields, filters, and copy-mode search support editing at the cursor. These shortcuts apply to Herdr-owned fields, not to the shell or agent inside a pane.

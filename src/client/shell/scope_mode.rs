@@ -1,0 +1,285 @@
+//! Pane, tab, spaces, and agents modes.
+//!
+//! Each mode stays open so movement keys can repeat: h/j/k/l or the arrows
+//! move focus and the shifted keys move the focused item. Creating an item
+//! returns to the terminal so the new item can take input right away.
+
+use super::*;
+use crate::config::terminal_key_matches_combo;
+use crate::input::{KeybindAction, KeybindMatch, TerminalKey};
+use crossterm::event::KeyModifiers;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Direction {
+    Left,
+    Down,
+    Up,
+    Right,
+}
+
+impl Direction {
+    fn toward_end(self) -> bool {
+        matches!(self, Self::Down | Self::Right)
+    }
+}
+
+impl ScopeMode {
+    const ALL: [Self; 4] = [Self::Pane, Self::Tab, Self::Workspace, Self::Agent];
+
+    pub(super) fn entered_by(action: KeybindAction) -> Option<Self> {
+        match action {
+            KeybindAction::EnterPaneMode => Some(Self::Pane),
+            KeybindAction::EnterTabMode => Some(Self::Tab),
+            KeybindAction::EnterWorkspaceMode => Some(Self::Workspace),
+            KeybindAction::EnterAgentMode => Some(Self::Agent),
+            _ => None,
+        }
+    }
+
+    fn bindings(self, keybinds: &crate::config::Keybinds) -> &crate::config::ActionKeybinds {
+        match self {
+            Self::Pane => &keybinds.pane_mode,
+            Self::Tab => &keybinds.tab_mode,
+            Self::Workspace => &keybinds.workspace_mode,
+            Self::Agent => &keybinds.agent_mode,
+        }
+    }
+
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Pane => " PANE ",
+            Self::Tab => " TAB ",
+            Self::Workspace => " SPACES ",
+            Self::Agent => " AGENTS ",
+        }
+    }
+
+    pub(super) fn color(self, palette: &Palette) -> ratatui::style::Color {
+        match self {
+            Self::Pane => palette.accent,
+            Self::Tab => palette.blue,
+            Self::Workspace => palette.green,
+            Self::Agent => palette.peach,
+        }
+    }
+
+    /// Key and description pairs shown in the mode bar.
+    pub(super) fn hints(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::Pane => &[
+                ("hjkl ←↓↑→", "focus"),
+                ("HJKL", "move"),
+                ("d", "split down"),
+                ("r", "split right"),
+                ("esc", "done"),
+            ],
+            Self::Tab => &[("h/l ←/→", "focus"), ("H/L", "move"), ("esc", "done")],
+            Self::Workspace => &[
+                ("j/k ↑/↓", "focus"),
+                ("J/K", "move"),
+                ("n", "new"),
+                ("esc", "done"),
+            ],
+            Self::Agent => &[("j/k ↑/↓", "focus"), ("esc", "done")],
+        }
+    }
+
+    fn focus_action(self, direction: Direction) -> KeybindAction {
+        let toward_end = direction.toward_end();
+        match self {
+            Self::Pane => match direction {
+                Direction::Left => KeybindAction::FocusPaneLeft,
+                Direction::Down => KeybindAction::FocusPaneDown,
+                Direction::Up => KeybindAction::FocusPaneUp,
+                Direction::Right => KeybindAction::FocusPaneRight,
+            },
+            Self::Tab if toward_end => KeybindAction::NextTab,
+            Self::Tab => KeybindAction::PreviousTab,
+            Self::Workspace if toward_end => KeybindAction::NextWorkspace,
+            Self::Workspace => KeybindAction::PreviousWorkspace,
+            Self::Agent if toward_end => KeybindAction::NextAgent,
+            Self::Agent => KeybindAction::PreviousAgent,
+        }
+    }
+
+    /// The item key that creates something, which also closes the mode.
+    fn create_action(self, key: &TerminalKey) -> Option<KeybindAction> {
+        let plain = |character| {
+            terminal_key_matches_combo(key, (KeyCode::Char(character), KeyModifiers::empty()))
+        };
+        match self {
+            Self::Pane if plain('d') => Some(KeybindAction::SplitHorizontal),
+            Self::Pane if plain('r') => Some(KeybindAction::SplitVertical),
+            Self::Workspace if plain('n') => Some(KeybindAction::NewWorkspace),
+            _ => None,
+        }
+    }
+}
+
+/// h/j/k/l or an arrow, and whether Shift was held to move the focused item.
+fn movement(key: &TerminalKey) -> Option<(Direction, bool)> {
+    [
+        ('h', KeyCode::Left, Direction::Left),
+        ('j', KeyCode::Down, Direction::Down),
+        ('k', KeyCode::Up, Direction::Up),
+        ('l', KeyCode::Right, Direction::Right),
+    ]
+    .into_iter()
+    .find_map(|(letter, arrow, direction)| {
+        [(KeyModifiers::empty(), false), (KeyModifiers::SHIFT, true)]
+            .into_iter()
+            .find(|(modifiers, _)| {
+                terminal_key_matches_combo(key, (KeyCode::Char(letter), *modifiers))
+                    || terminal_key_matches_combo(key, (arrow, *modifiers))
+            })
+            .map(|(_, shifted)| (direction, shifted))
+    })
+}
+
+impl ClientShellState {
+    pub(super) fn route_scope_key(
+        &mut self,
+        scope: ScopeMode,
+        key: &TerminalKey,
+        outcome: &mut ClientShellInput,
+    ) {
+        let (code, modifiers) = crate::config::normalize_key_combo((key.code, key.modifiers));
+        if (matches!(code, KeyCode::Esc | KeyCode::Enter) && modifiers.is_empty())
+            || super::input::is_ctrl_bracket_key(key)
+        {
+            self.exit_scope_mode(outcome);
+            return;
+        }
+        if let Some(next) = self.scope_mode_key(key, true) {
+            self.switch_scope_mode(scope, next, outcome);
+            return;
+        }
+        if self.config.keybinds.matches_prefix(key) {
+            self.mode = ClientShellMode::Prefix;
+            outcome.repaint = true;
+            return;
+        }
+
+        if let Some((direction, shifted)) = movement(key) {
+            if !shifted {
+                let action = scope.focus_action(direction);
+                self.record_binding(KeybindMatch::Action(action), outcome);
+                outcome.repaint = true;
+                return;
+            }
+            match scope {
+                ScopeMode::Pane => {
+                    let action = match direction {
+                        Direction::Left => KeybindAction::SwapPaneLeft,
+                        Direction::Down => KeybindAction::SwapPaneDown,
+                        Direction::Up => KeybindAction::SwapPaneUp,
+                        Direction::Right => KeybindAction::SwapPaneRight,
+                    };
+                    self.record_binding(KeybindMatch::Action(action), outcome);
+                }
+                ScopeMode::Tab => {
+                    let action = if direction.toward_end() {
+                        KeybindAction::MoveTabNext
+                    } else {
+                        KeybindAction::MoveTabPrevious
+                    };
+                    self.record_binding(KeybindMatch::Action(action), outcome);
+                }
+                ScopeMode::Workspace => {
+                    self.move_focused_workspace(direction.toward_end(), outcome);
+                }
+                // Agents follow the panel order, which the user does not arrange.
+                ScopeMode::Agent => {}
+            }
+            outcome.repaint = true;
+            return;
+        }
+
+        if let Some(action) = scope.create_action(key) {
+            self.mode = self.copy_or_terminal_mode();
+            self.record_binding(KeybindMatch::Action(action), outcome);
+            outcome.repaint = true;
+            return;
+        }
+        // A mode bound under the prefix closes or switches on its bare key. Item
+        // keys are checked first so they keep working if the two overlap.
+        if let Some(next) = self.scope_mode_key(key, false) {
+            self.switch_scope_mode(scope, next, outcome);
+        }
+    }
+
+    fn scope_mode_key(&self, key: &TerminalKey, direct: bool) -> Option<ScopeMode> {
+        let keybinds = &self.config.keybinds.keybinds;
+        ScopeMode::ALL.into_iter().find(|mode| {
+            let bindings = mode.bindings(keybinds);
+            if direct {
+                bindings.matches_direct_key(key)
+            } else {
+                bindings.matches_prefix_key(key)
+            }
+        })
+    }
+
+    fn switch_scope_mode(
+        &mut self,
+        current: ScopeMode,
+        next: ScopeMode,
+        outcome: &mut ClientShellInput,
+    ) {
+        if next == current {
+            self.exit_scope_mode(outcome);
+        } else {
+            self.mode = ClientShellMode::Scope(next);
+            outcome.repaint = true;
+        }
+    }
+
+    fn exit_scope_mode(&mut self, outcome: &mut ClientShellInput) {
+        self.mode = self.copy_or_terminal_mode();
+        outcome.repaint = true;
+    }
+
+    /// Moves the focused workspace one place in the sidebar, wrapping at the
+    /// ends like tab moves. A worktree group moves as one block.
+    fn move_focused_workspace(&mut self, toward_end: bool, outcome: &mut ClientShellInput) {
+        let Some(snapshot) = self.snapshot.as_deref() else {
+            return;
+        };
+        let Some(workspace_id) = snapshot.focused_workspace_id.clone() else {
+            return;
+        };
+        let roots = snapshot
+            .workspaces
+            .iter()
+            .filter(|workspace| {
+                !workspace
+                    .worktree
+                    .as_ref()
+                    .is_some_and(|worktree| worktree.is_linked_worktree)
+            })
+            .map(|workspace| workspace.workspace_id.clone())
+            .collect::<Vec<_>>();
+        let Some(position) = roots.iter().position(|id| *id == workspace_id) else {
+            return;
+        };
+        if roots.len() < 2 {
+            return;
+        }
+        let before = if toward_end {
+            if position + 1 == roots.len() {
+                roots.first()
+            } else {
+                roots.get(position + 2)
+            }
+        } else if position == 0 {
+            None
+        } else {
+            roots.get(position - 1)
+        };
+        if let Some(method) = self.workspace_move_method(&workspace_id, before.map(String::as_str))
+        {
+            self.reveal_workspace(&workspace_id);
+            self.push_endpoint_method(method, outcome);
+        }
+    }
+}

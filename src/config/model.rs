@@ -455,6 +455,14 @@ pub struct KeysConfig {
     pub resize_pane_right: BindingConfig,
     /// Toggle sidebar collapse. Default: "prefix+b"
     pub toggle_sidebar: BindingConfig,
+    /// Enter pane mode: move focus, move panes, and split. Default: "ctrl+p"
+    pub pane_mode: BindingConfig,
+    /// Enter tab mode: move focus between tabs and reorder them. Default: "ctrl+t"
+    pub tab_mode: BindingConfig,
+    /// Enter spaces mode: move focus between workspaces, reorder, and create them. Default: "ctrl+s"
+    pub workspace_mode: BindingConfig,
+    /// Enter agents mode: move focus between agents. Default: "ctrl+a"
+    pub agent_mode: BindingConfig,
     /// Optional indexed shortcuts expanded over number keys 1-9.
     pub indexed: IndexedKeysConfig,
     /// Prefix-mode custom command bindings.
@@ -592,6 +600,14 @@ pub(crate) struct KeysConfigOverlay {
     #[serde(skip_serializing_if = "Option::is_none")]
     toggle_sidebar: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pane_mode: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tab_mode: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workspace_mode: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_mode: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     indexed: Option<IndexedKeysConfig>,
     #[serde(skip_serializing)]
     command: Option<Vec<CommandKeybindConfig>>,
@@ -703,6 +719,10 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(resize_pane_up);
         apply_field!(resize_pane_right);
         apply_field!(toggle_sidebar);
+        apply_field!(pane_mode);
+        apply_field!(tab_mode);
+        apply_field!(workspace_mode);
+        apply_field!(agent_mode);
         apply_field!(indexed);
         apply_field!(command);
 
@@ -808,6 +828,10 @@ impl KeysConfig {
         copy_effective_action_field!(resize_pane_up, keybinds.resize_pane_up);
         copy_effective_action_field!(resize_pane_right, keybinds.resize_pane_right);
         copy_effective_action_field!(toggle_sidebar, keybinds.toggle_sidebar);
+        copy_effective_action_field!(pane_mode, keybinds.pane_mode);
+        copy_effective_action_field!(tab_mode, keybinds.tab_mode);
+        copy_effective_action_field!(workspace_mode, keybinds.workspace_mode);
+        copy_effective_action_field!(agent_mode, keybinds.agent_mode);
         copy_user_field!(indexed);
 
         profile
@@ -1180,6 +1204,10 @@ impl Default for KeysConfig {
             resize_pane_up: BindingConfig::empty(),
             resize_pane_right: BindingConfig::empty(),
             toggle_sidebar: BindingConfig::one("prefix+b"),
+            pane_mode: BindingConfig::one("ctrl+p"),
+            tab_mode: BindingConfig::one("ctrl+t"),
+            workspace_mode: BindingConfig::one("ctrl+s"),
+            agent_mode: BindingConfig::one("ctrl+a"),
             indexed: IndexedKeysConfig::default(),
             command: Vec::new(),
             user_fields: BTreeSet::new(),

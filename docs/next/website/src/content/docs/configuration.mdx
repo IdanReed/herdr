@@ -151,7 +151,7 @@ prefix = ["ctrl+space", "ctrl+s"]
 
 Every configured prefix enters the same prefix mode and starts every `prefix+...` action. The first entry is the primary prefix shown in the status bar; the in-app help panel at `prefix+?` lists all of them.
 
-The default keymap is prefix-first so Herdr does not steal input from shells, editors, tmux, or terminal apps. Search `keys.` in the [Config reference](/docs/config-reference/) to see every action and default binding. The in-app help panel at `prefix+?` shows the active bindings.
+The default keymap is prefix-first so Herdr does not steal input from shells, editors, tmux, or terminal apps. The exceptions are the four [mode keys](/docs/keyboard/#modes) `ctrl+p`, `ctrl+t`, `ctrl+s`, and `ctrl+a`; set `pane_mode`, `tab_mode`, `workspace_mode`, or `agent_mode` to `""` to give a key back to the pane. Search `keys.` in the [Config reference](/docs/config-reference/) to see every action and default binding. The in-app help panel at `prefix+?` shows the active bindings.
 
 A binding may also be an array when one action needs multiple shortcuts:
 
@@ -313,7 +313,7 @@ The sidebar is the main Herdr dashboard. Search `ui.` in the [Config reference](
 
 `ui.pane_borders` accepts `"auto"` (the default, borders only for split panes), `"always"` (also frame a single pane), or `"off"`. A single-pane frame requires `ui.pane_outer_borders = true`, because all its edges are outer edges. Existing boolean values remain valid: `true` means `"auto"` and `false` means `"off"`.
 
-Set `tab_bar_position = "bottom"` under `[ui]` to place the desktop tab row below the terminal panes. Prefix, Navigate, Copy, and Resize mode bars temporarily replace the bottom tab row while active. The default is `"top"`.
+Set `tab_bar_position = "bottom"` under `[ui]` to place the desktop tab row below the terminal panes. Prefix, Navigate, Copy, Resize, Pane, Tab, Spaces, and Agents mode bars temporarily replace the bottom tab row while active. The default is `"top"`.
 
 Configure an ordered tmux-style status area at the right edge of the tab row:
 

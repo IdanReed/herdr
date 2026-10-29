@@ -403,6 +403,10 @@ pub struct Keybinds {
     pub resize_pane_up: ActionKeybinds,
     pub resize_pane_right: ActionKeybinds,
     pub toggle_sidebar: ActionKeybinds,
+    pub pane_mode: ActionKeybinds,
+    pub tab_mode: ActionKeybinds,
+    pub workspace_mode: ActionKeybinds,
+    pub agent_mode: ActionKeybinds,
     pub custom_commands: Vec<CustomCommandKeybind>,
 }
 
@@ -586,6 +590,10 @@ impl Config {
             resize_pane_up: empty_action!(),
             resize_pane_right: empty_action!(),
             toggle_sidebar: empty_action!(),
+            pane_mode: empty_action!(),
+            tab_mode: empty_action!(),
+            workspace_mode: empty_action!(),
+            agent_mode: empty_action!(),
             custom_commands: Vec::new(),
         };
 
@@ -734,6 +742,10 @@ impl Config {
             apply_action!(keybinds.resize_pane_up, resize_pane_up, source);
             apply_action!(keybinds.resize_pane_right, resize_pane_right, source);
             apply_action!(keybinds.toggle_sidebar, toggle_sidebar, source);
+            apply_action!(keybinds.pane_mode, pane_mode, source);
+            apply_action!(keybinds.tab_mode, tab_mode, source);
+            apply_action!(keybinds.workspace_mode, workspace_mode, source);
+            apply_action!(keybinds.agent_mode, agent_mode, source);
 
             if source == field_source!(indexed) {
                 append_legacy_indexed_bindings(
@@ -1097,7 +1109,13 @@ fn reject_binding(
     }
 
     if let Some(first_binding) = registry.conflict(binding) {
-        if source == BindingSource::Default && first_binding.source == BindingSource::User {
+        // Defaults yield to user bindings and to the prefix key, so choosing a
+        // prefix such as ctrl+a never reports the mode key it displaced.
+        let displaced_by_prefix =
+            binding.trigger.is_direct() && registry.prefix_rhs_is_reserved(binding.trigger.combo());
+        if source == BindingSource::Default
+            && (first_binding.source == BindingSource::User || displaced_by_prefix)
+        {
             return true;
         }
         let first_field = &first_binding.field;
@@ -1968,6 +1986,43 @@ help = "prefix+ctrl+b"
         )
         .unwrap();
         assert!(!config.keybinds().help.bindings.is_empty());
+    }
+
+    #[test]
+    fn mode_keys_default_to_direct_ctrl_chords_and_yield_to_any_prefix() {
+        let keybinds = Config::default().keybinds();
+        for (bindings, letter) in [
+            (&keybinds.pane_mode, 'p'),
+            (&keybinds.tab_mode, 't'),
+            (&keybinds.workspace_mode, 's'),
+            (&keybinds.agent_mode, 'a'),
+        ] {
+            assert!(bindings.matches_direct_key(&TerminalKey::new(
+                KeyCode::Char(letter),
+                KeyModifiers::CONTROL
+            )));
+        }
+
+        // A prefix displaces the mode default quietly, whether it came from
+        // config.toml or was set in code.
+        let from_file: Config =
+            toml::from_str("[keys]\nprefix = [\"ctrl+a\", \"ctrl+s\"]\n").expect("prefix config");
+        let mut in_code = Config::default();
+        in_code.keys.prefix = BindingConfig::one("ctrl+a");
+        for config in [from_file, in_code] {
+            assert!(config.collect_diagnostics().is_empty());
+            assert!(config.keybinds().agent_mode.bindings.is_empty());
+            assert!(!config.keybinds().pane_mode.bindings.is_empty());
+        }
+
+        // A user binding on a mode key still reports the conflict it creates.
+        let config: Config =
+            toml::from_str("[keys]\npane_mode = \"ctrl+a\"\nagent_mode = \"ctrl+a\"\n")
+                .expect("conflicting mode keys");
+        assert!(config
+            .collect_diagnostics()
+            .iter()
+            .any(|diag| diag.contains("keys.agent_mode")));
     }
 
     #[test]

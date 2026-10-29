@@ -163,6 +163,11 @@ impl ClientShellState {
                     outcome.repaint = true;
                     return;
                 }
+                if let Some(scope) = ScopeMode::entered_by(action) {
+                    self.mode = ClientShellMode::Scope(scope);
+                    outcome.repaint = true;
+                    return;
+                }
                 if action == crate::input::KeybindAction::CopyMode {
                     if self.enter_copy_mode(outcome) {
                         outcome.repaint = true;
