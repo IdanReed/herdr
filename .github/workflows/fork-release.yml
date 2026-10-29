@@ -1,0 +1,122 @@
+name: Fork release
+
+# Publishes a Windows build from a fork, for installing it with Scoop.
+# Upstream releases go through release.yml, which only runs in herdrdev/herdr.
+# Tag the fork as v<Cargo.toml version>-<suffix>, for example v0.9.5-idan.1.
+
+on:
+  push:
+    tags:
+      - "v*-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: existing tag to build and publish
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  RUST_TOOLCHAIN_VERSION: 1.96.1
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  build-windows:
+    if: github.repository != 'herdrdev/herdr'
+    runs-on: windows-2022
+    env:
+      LIBGHOSTTY_VT_OPTIMIZE: ReleaseFast
+      LIBGHOSTTY_VT_SIMD: 'true'
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: Verify tag matches Cargo.toml version
+        shell: bash
+        run: |
+          CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          case "$RELEASE_TAG" in
+            "v$CARGO_VERSION"-*) ;;
+            *)
+              echo "error: tag $RELEASE_TAG must be v$CARGO_VERSION-<suffix>"
+              exit 1
+              ;;
+          esac
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Zig
+        uses: vercel-labs/setup-zig@83c1594f26b86da8a9a8ddd9b5ee5f3af0f96943 # v1.0.2
+        with:
+          version: 0.16.0
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          key: fork-release-x86_64-pc-windows-msvc
+
+      - name: Remove Zig caches
+        shell: bash
+        run: rm -rf .zig-cache vendor/libghostty-vt/.zig-cache vendor/libghostty-vt/zig-out
+
+      - name: Build
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+
+      - name: Package artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $package = Join-Path $env:RUNNER_TEMP "Microsoft.Windows.Console.ConPTY.nupkg"
+          $stage = Join-Path $env:RUNNER_TEMP "herdr-windows-x86_64"
+          .\scripts\package_windows_conpty.ps1 `
+            -HerdrExe target\x86_64-pc-windows-msvc\release\herdr.exe `
+            -PackagePath $package `
+            -StageDir $stage `
+            -OutputPath herdr-windows-x86_64.zip
+          $version = (& (Join-Path $stage "herdr.exe") --version | Out-String).Trim()
+          $cargoVersion = ($env:RELEASE_TAG -replace '^v', '') -replace '-.*$', ''
+          if ($version -notmatch [regex]::Escape($cargoVersion) -or $version -match "preview") {
+            throw "Packaged Windows binary has unexpected version identity: $version"
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: herdr-windows-x86_64.zip
+          path: herdr-windows-x86_64.zip
+
+  publish:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: herdr-windows-x86_64.zip
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sha=$(sha256sum herdr-windows-x86_64.zip | cut -d' ' -f1)
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" herdr-windows-x86_64.zip --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" herdr-windows-x86_64.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --notes "Windows build of $RELEASE_TAG. herdr-windows-x86_64.zip sha256: $sha"
+          fi
