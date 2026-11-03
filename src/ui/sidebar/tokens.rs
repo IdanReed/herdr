@@ -251,12 +251,11 @@ mod tests {
                 .collect::<Vec<_>>()
         };
 
-        // The default two-line layout becomes one line per agent.
+        // The default two-line layout becomes one line that names the tab.
         assert_eq!(
             kinds(agent_rows(&AgentsSidebarConfig::default(), heading, "idle")),
             vec![vec![
                 ResolvedTokenKind::StateIcon,
-                ResolvedTokenKind::Agent("pi".into()),
                 ResolvedTokenKind::Tab("tests".into()),
             ]]
         );

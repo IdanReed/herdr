@@ -1466,24 +1466,33 @@ fn aggregate_agents_group_under_machine_and_space_headings() {
             .position(|row| row.contains(needle))
             .unwrap_or_else(|| panic!("missing {needle:?} in {rows:#?}"))
     };
+    let agent_row = |endpoint: &ClientEndpointId| {
+        state
+            .hits
+            .endpoint_agents
+            .iter()
+            .find(|(_, hit, _)| hit == endpoint)
+            .map(|(rect, _, _)| usize::from(rect.y))
+            .unwrap_or_else(|| panic!("missing {endpoint:?} hit in {rows:#?}"))
+    };
     let local_heading = position(" Local · client-shell ─");
-    let local_agent = position("local agent");
+    let local_agent = agent_row(&ClientEndpointId::Local);
     let remote_heading = position(" Build · client-shell ─");
-    let remote_agent = position("remote agent");
+    let remote_agent = agent_row(&endpoint_id);
     assert!(local_heading < local_agent);
     assert!(local_agent < remote_heading);
     assert!(remote_heading < remote_agent);
-    // The heading names the machine, so agent rows leave the machine out.
-    assert!(
-        !rows[local_agent].contains("Local ·"),
-        "{}",
-        rows[local_agent]
-    );
-    assert!(
-        !rows[remote_agent].contains("Build ·"),
-        "{}",
-        rows[remote_agent]
-    );
+    // The heading names the machine and space, so agent rows name only the
+    // tab, which here has no custom name.
+    for index in [local_agent, remote_agent] {
+        let row = &rows[index];
+        assert!(
+            !row.contains("Local ·") && !row.contains("Build ·"),
+            "{row}"
+        );
+        assert!(!row.contains("agent") && !row.contains("pi"), "{row}");
+        assert!(row.contains("unnamed"), "{row}");
+    }
     assert_eq!(state.hits.endpoint_agents.len(), 2);
 }
 

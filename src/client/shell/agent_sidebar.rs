@@ -10,6 +10,9 @@ use ratatui::{
 
 use super::*;
 
+/// What the `tab` token says under a space heading when the tab has no custom name.
+pub(super) const UNNAMED_TAB_LABEL: &str = "unnamed";
+
 pub(super) struct AgentRow {
     pub(super) pane_id: String,
     pub(super) workspace_id: String,
@@ -348,9 +351,17 @@ pub(super) fn agent_row(
         .iter()
         .filter(|candidate| candidate.workspace_id == agent.workspace_id)
         .count();
-    let tab_label = tab
-        .filter(|tab| tab_count > 1 || tab.custom_label)
-        .map(|tab| tab.label.as_str());
+    // Under a heading the row is named by its tab, so a tab without a custom
+    // name still gets a label instead of leaving the row blank.
+    let tab_label = if under_heading {
+        Some(
+            tab.filter(|tab| tab.custom_label)
+                .map_or(UNNAMED_TAB_LABEL, |tab| tab.label.as_str()),
+        )
+    } else {
+        tab.filter(|tab| tab_count > 1 || tab.custom_label)
+            .map(|tab| tab.label.as_str())
+    };
     let agent_label = agent
         .display_agent
         .as_deref()

@@ -15,6 +15,8 @@ fn grouped_snapshot(alpha_agents: usize) -> ClientShellSnapshot {
     let mut beta_tab = snapshot.tabs[0].clone();
     beta_tab.tab_id = "tab_2".into();
     beta_tab.workspace_id = "ws_2".into();
+    beta_tab.label = "review".into();
+    beta_tab.custom_label = true;
     beta_tab.focused = false;
     snapshot.tabs.push(beta_tab);
 
@@ -91,6 +93,17 @@ fn is_heading(row: &str, name: &str) -> bool {
     row.starts_with(&format!(" {name} ─"))
 }
 
+/// The agent panel body row that is the hit target for `pane_id`, if visible.
+fn agent_row_index(state: &ClientShellState, pane_id: &str) -> Option<usize> {
+    let body = state.hits.agent_body;
+    state
+        .hits
+        .agents
+        .iter()
+        .find(|(_, hit)| hit == pane_id)
+        .map(|(rect, _)| usize::from(rect.y - body.y))
+}
+
 #[test]
 fn agents_appear_under_a_heading_for_their_space() {
     let mut state = shell(grouped_snapshot(2), &grouped_config());
@@ -101,21 +114,30 @@ fn agents_appear_under_a_heading_for_their_space() {
             .position(|row| predicate(row))
             .unwrap_or_else(|| panic!("missing row in {rows:#?}"))
     };
+    let agent_row = |pane_id: &str| {
+        agent_row_index(&state, pane_id).unwrap_or_else(|| panic!("missing {pane_id} in {rows:#?}"))
+    };
     let alpha = position(&|row| is_heading(row, "alpha"));
-    let first = position(&|row| row.contains("agent 1"));
-    let second = position(&|row| row.contains("agent 2"));
+    let first = agent_row("pane_1");
+    let second = agent_row("pane_2");
     let beta = position(&|row| is_heading(row, "beta"));
-    let third = position(&|row| row.contains("agent 3"));
+    let third = agent_row("pane_3");
     assert!(alpha < first && first < second && second < beta && beta < third);
     assert_eq!(beta, second + 1, "{rows:#?}");
 
-    // One indented line per agent; the heading already names the space.
+    // One indented line per agent that names the tab, not the agent or space.
     for index in [first, second, third] {
         let row = &rows[index];
         assert!(row.starts_with("  "), "{row:?}");
         assert!(!row.contains("alpha") && !row.contains("beta"), "{row:?}");
+        assert!(!row.contains("agent") && !row.contains("pi"), "{row:?}");
     }
     assert_eq!(second, first + 1, "{rows:#?}");
+    // The alpha tab keeps its automatic label, so its rows say so.
+    assert!(rows[first].contains("unnamed"), "{}", rows[first]);
+    assert!(rows[second].contains("unnamed"), "{}", rows[second]);
+    assert!(rows[third].contains("review"), "{}", rows[third]);
+    assert!(!rows[third].contains("unnamed"), "{}", rows[third]);
 
     let hit_panes = state
         .hits
@@ -147,6 +169,8 @@ fn agent_list_stays_flat_without_the_option_or_with_priority_sort() {
             "{rows:#?}"
         );
         assert!(rows.iter().any(|row| row.contains("alpha")), "{rows:#?}");
+        assert!(rows.iter().any(|row| row.contains("agent 1")), "{rows:#?}");
+        assert!(!rows.iter().any(|row| row.contains("unnamed")), "{rows:#?}");
     }
 
     // Toggling the panel to priority drops the headings.
@@ -171,7 +195,7 @@ fn moving_to_an_agent_out_of_view_reveals_its_space_heading() {
     let mut state = shell(grouped_snapshot(12), &grouped_config());
     let rows = agent_body_rows(&mut state, 24);
     assert!(
-        !rows.iter().any(|row| row.contains("agent 13")),
+        agent_row_index(&state, "pane_13").is_none(),
         "the last agent should start out of view: {rows:#?}"
     );
 
@@ -186,7 +210,11 @@ fn moving_to_an_agent_out_of_view_reveals_its_space_heading() {
         .iter()
         .position(|row| is_heading(row, "beta"))
         .unwrap_or_else(|| panic!("beta heading should be visible: {rows:#?}"));
-    assert!(rows[beta + 1].contains("agent 13"), "{rows:#?}");
+    assert_eq!(
+        agent_row_index(&state, "pane_13"),
+        Some(beta + 1),
+        "{rows:#?}"
+    );
 
     // The scroll range counts headings, so the end of the list is reachable.
     let body = state.hits.agent_body;
@@ -199,11 +227,9 @@ fn moving_to_an_agent_out_of_view_reveals_its_space_heading() {
         })]);
     }
     let rows = agent_body_rows(&mut state, 24);
-    assert!(
-        rows.iter()
-            .rev()
-            .find(|row| !row.is_empty())
-            .is_some_and(|row| row.contains("agent 13")),
-        "{rows:#?}"
-    );
+    let last = rows
+        .iter()
+        .rposition(|row| !row.is_empty())
+        .unwrap_or_else(|| panic!("{rows:#?}"));
+    assert_eq!(agent_row_index(&state, "pane_13"), Some(last), "{rows:#?}");
 }

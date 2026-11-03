@@ -442,8 +442,9 @@ const DEFAULT_AGENT_ROWS: [&[AgentSidebarToken]; 2] = [
 ];
 
 impl AgentsSidebarConfig {
-    /// Under a space heading the default layout shrinks to one line, because
-    /// the heading already names the space. Custom layouts stay as written.
+    /// Under a space heading the default layout shrinks to one line that
+    /// names the tab, because the heading already names the space and the
+    /// agent is not what tells rows apart. Custom layouts stay as written.
     pub(crate) fn rows_for_agent(
         &self,
         agent: Option<Agent>,
@@ -463,7 +464,6 @@ impl AgentsSidebarConfig {
         if under_heading && default_layout {
             return std::borrow::Cow::Owned(vec![vec![
                 AgentSidebarToken::StateIcon,
-                AgentSidebarToken::Agent,
                 AgentSidebarToken::Tab,
             ]]);
         }
