@@ -145,6 +145,7 @@ fn agent_list_items(
         (
             (row.endpoint_id.clone(), row.agent.workspace_id.clone()),
             format!("{} · {}", row.machine_label, row.agent.workspace_label),
+            row.agent.workspace_color,
         )
     })
 }

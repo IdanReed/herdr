@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::Line,
     widgets::{Paragraph, Widget},
 };
@@ -17,6 +17,8 @@ pub(super) struct AgentRow {
     pub(super) pane_id: String,
     pub(super) workspace_id: String,
     pub(super) workspace_label: String,
+    /// Configured color for the space name, from `ui.sidebar.space_colors`.
+    pub(super) workspace_color: Option<Color>,
     pub(super) status: crate::api::schema::AgentStatus,
     pub(super) focused: bool,
     pub(super) under_heading: bool,
@@ -28,6 +30,7 @@ pub(super) enum AgentListItem<T> {
     /// Names the space of the agents that follow it.
     Heading {
         label: String,
+        color: Option<Color>,
     },
     Agent(T),
 }
@@ -39,17 +42,17 @@ pub(super) fn groups_by_space(agent_view_label: Option<&str>) -> bool {
 }
 
 /// Adds a heading wherever the space changes. `space` gives the key that
-/// identifies a row's space and the heading text.
+/// identifies a row's space, the heading text, and the heading color.
 pub(super) fn with_space_headings<T, K: PartialEq>(
     rows: Vec<T>,
-    space: impl Fn(&T) -> (K, String),
+    space: impl Fn(&T) -> (K, String, Option<Color>),
 ) -> Vec<AgentListItem<T>> {
     let mut items = Vec::with_capacity(rows.len());
     let mut previous = None;
     for row in rows {
-        let (key, label) = space(&row);
+        let (key, label, color) = space(&row);
         if previous.as_ref() != Some(&key) {
-            items.push(AgentListItem::Heading { label });
+            items.push(AgentListItem::Heading { label, color });
             previous = Some(key);
         }
         items.push(AgentListItem::Agent(row));
@@ -276,8 +279,8 @@ pub(super) fn render_agent_list<T>(
         }
         let rect = Rect::new(body.x, y, content_width, height);
         match row {
-            AgentListItem::Heading { label } => {
-                render_space_heading(buffer, rect, label, config);
+            AgentListItem::Heading { label, color } => {
+                render_space_heading(buffer, rect, label, *color, config);
             }
             AgentListItem::Agent(row) => render_row(buffer, rect, row, hits),
         }
@@ -304,7 +307,11 @@ pub(super) fn agent_list_items(
         return rows.into_iter().map(AgentListItem::Agent).collect();
     }
     with_space_headings(rows, |row| {
-        (row.workspace_id.clone(), row.workspace_label.clone())
+        (
+            row.workspace_id.clone(),
+            row.workspace_label.clone(),
+            row.workspace_color,
+        )
     })
 }
 
@@ -384,6 +391,7 @@ pub(super) fn agent_row(
         pane_id: agent.pane_id.clone(),
         workspace_id: workspace.workspace_id.clone(),
         workspace_label: workspace.label.clone(),
+        workspace_color: config.space_colors.color_for(workspace.cwd.as_deref()),
         status: agent.agent_status,
         focused: agent.focused,
         under_heading,
@@ -447,7 +455,13 @@ pub(super) fn render_agent_row(
 }
 
 /// ` name ───────` across the row, as bright as an unfocused space or agent row.
-fn render_space_heading(buffer: &mut Buffer, rect: Rect, label: &str, config: &ClientShellConfig) {
+fn render_space_heading(
+    buffer: &mut Buffer,
+    rect: Rect,
+    label: &str,
+    color: Option<Color>,
+    config: &ClientShellConfig,
+) {
     let palette = &config.palette;
     let width = usize::from(rect.width);
     let name = crate::ui::truncate_end(label, width.saturating_sub(3));
@@ -456,7 +470,7 @@ fn render_space_heading(buffer: &mut Buffer, rect: Rect, label: &str, config: &C
         rect.y,
         format!(" {name} "),
         width,
-        Style::default().fg(palette.subtext0),
+        super::render::sidebar::space_name_style(color, false, palette),
     );
     let rule_width = rect.right().saturating_sub(rule_x);
     buffer.set_stringn(

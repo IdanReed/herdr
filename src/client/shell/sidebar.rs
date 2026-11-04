@@ -24,6 +24,50 @@ pub(in crate::client::shell) fn workspace_active_background(
     }
 }
 
+/// Text style for a space name, in the spaces list and in the agents panel headings.
+///
+/// The focused space is bright and bold; every other space name is as bright as
+/// an unfocused row. A configured color keeps that order: the focused space
+/// shows the full color, and the others a dimmed form of it.
+pub(in crate::client::shell) fn space_name_style(
+    color: Option<ratatui::style::Color>,
+    highlighted: bool,
+    palette: &Palette,
+) -> Style {
+    match (color, highlighted) {
+        (Some(color), true) => Style::default().fg(color).add_modifier(Modifier::BOLD),
+        (Some(color), false) => dimmed_style(color, palette),
+        (None, true) => Style::default()
+            .fg(palette.text)
+            .add_modifier(Modifier::BOLD),
+        (None, false) => Style::default().fg(palette.subtext0),
+    }
+}
+
+/// Share of a color kept when it is dimmed toward the background. It matches the
+/// step from the theme's text color to its unfocused text color.
+const DIMMED_COLOR_SHARE: u16 = 78;
+
+/// `color` moved toward the sidebar background, or toward the panel background
+/// when the sidebar keeps the terminal's own. Falls back to the terminal's dim
+/// attribute when the color or every background candidate is not an RGB value.
+fn dimmed_style(color: ratatui::style::Color, palette: &Palette) -> Style {
+    use ratatui::style::Color;
+    let background = [palette.sidebar_bg, palette.panel_bg, palette.surface_dim]
+        .into_iter()
+        .find(|candidate| matches!(candidate, Color::Rgb(..)));
+    match (color, background) {
+        (Color::Rgb(r, g, b), Some(Color::Rgb(br, bg, bb))) => {
+            let mix = |value: u8, base: u8| {
+                let (value, base) = (u16::from(value), u16::from(base));
+                ((value * DIMMED_COLOR_SHARE + base * (100 - DIMMED_COLOR_SHARE)) / 100) as u8
+            };
+            Style::default().fg(Color::Rgb(mix(r, br), mix(g, bg), mix(b, bb)))
+        }
+        _ => Style::default().fg(color).add_modifier(Modifier::DIM),
+    }
+}
+
 pub(in crate::client::shell) fn collapsed_sidebar_sections(
     area: Rect,
 ) -> (Rect, Option<u16>, Rect) {
@@ -327,14 +371,14 @@ pub(crate) fn render_sidebar(
             buffer,
             rect,
             status,
-            config.status_indicators,
             entry,
             rows,
+            config.space_colors.color_for(workspace.cwd.as_deref()),
             workspace.focused,
             selected,
             state.selected_workspace_id.is_some(),
             dragged,
-            palette,
+            config,
         );
         let group_toggle = render_parent_group_toggle(
             buffer,
@@ -727,15 +771,16 @@ pub(in crate::client::shell) fn render_workspace_rows(
     buffer: &mut Buffer,
     area: Rect,
     status: crate::api::schema::AgentStatus,
-    indicators: crate::config::StatusIndicatorStyle,
     entry: &WorkspaceEntry,
     rows: Vec<Vec<crate::ui::ResolvedToken>>,
+    name_color: Option<ratatui::style::Color>,
     focused: bool,
     selected: bool,
     navigating: bool,
     dragged: bool,
-    palette: &Palette,
+    config: &ClientShellConfig,
 ) {
+    let palette = &config.palette;
     for (row_index, row) in rows.iter().enumerate() {
         let y = area.y + row_index as u16;
         if y >= area.bottom() {
@@ -767,18 +812,7 @@ pub(in crate::client::shell) fn render_workspace_rows(
         } else {
             x = x.saturating_add(3);
         }
-        let highlighted = focused || dragged;
-        let workspace_style = Style::default()
-            .fg(if highlighted {
-                palette.text
-            } else {
-                palette.subtext0
-            })
-            .add_modifier(if highlighted {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            });
+        let workspace_style = space_name_style(name_color, focused || dragged, palette);
         let secondary_style = Style::default().fg(if focused {
             palette.mauve
         } else {
@@ -787,7 +821,7 @@ pub(in crate::client::shell) fn render_workspace_rows(
         let spans = crate::ui::resolved_token_spans(
             row,
             (
-                status_icon(status, indicators),
+                status_icon(status, config.status_indicators),
                 Style::default().fg(status_color(status, palette)),
             ),
             Style::default().fg(status_color(status, palette)),

@@ -897,6 +897,7 @@ impl App {
                 diagnostics.extend(crate::config::window_title_diagnostics(
                     &config.ui.window_title,
                 ));
+                diagnostics.extend(crate::config::SpaceColors::compile(&config.ui.sidebar).1);
 
                 self.loaded_host_cursor = config.ui.host_cursor;
                 self.state.confirm_close = config.ui.confirm_close;
@@ -1833,6 +1834,17 @@ mod tests {
         let report = app.apply_live_config(&config, &[], &["session".into()], false);
         assert!(report.diagnostics.is_empty());
         assert_eq!(app.startup_per_agent_delay, Duration::from_millis(100));
+    }
+
+    #[test]
+    fn reload_config_reports_invalid_space_colors() {
+        let mut app = test_app();
+        let config: Config =
+            toml::from_str("[[ui.sidebar.space_colors]]\ncwd = '(unclosed'\ncolor = 'red'\n")
+                .unwrap();
+        let report = app.apply_live_config(&config, &[], &[], false);
+        assert_eq!(report.diagnostics.len(), 1, "{:?}", report.diagnostics);
+        assert!(report.diagnostics[0].starts_with("ui.sidebar.space_colors[0].cwd"));
     }
 
     #[test]

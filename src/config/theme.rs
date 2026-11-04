@@ -150,14 +150,22 @@ pub struct ModeThemeColors {
     pub peach: Option<String>,
 }
 
-/// Parse a color string into a ratatui Color.
+/// Parse a color string into a ratatui Color, defaulting to cyan when it is not a color.
 /// Supports: hex (#rrggbb, #rgb), named colors, rgb(r,g,b), and reset aliases.
 pub fn parse_color(s: &str) -> ratatui::style::Color {
+    try_parse_color(s).unwrap_or_else(|| {
+        warn!(color = s, "unknown color, defaulting to cyan");
+        ratatui::style::Color::Cyan
+    })
+}
+
+/// Parse a color string with the [`parse_color`] syntax, or `None` when it is not a color.
+pub(crate) fn try_parse_color(s: &str) -> Option<ratatui::style::Color> {
     use ratatui::style::Color;
     let s = s.trim().to_lowercase();
 
     match s.as_str() {
-        "reset" | "default" | "none" | "transparent" => return Color::Reset,
+        "reset" | "default" | "none" | "transparent" => return Some(Color::Reset),
         _ => {}
     }
 
@@ -168,7 +176,7 @@ pub fn parse_color(s: &str) -> ratatui::style::Color {
                 u8::from_str_radix(&hex[2..4], 16),
                 u8::from_str_radix(&hex[4..6], 16),
             ) {
-                return Color::Rgb(r, g, b);
+                return Some(Color::Rgb(r, g, b));
             }
         } else if hex.len() == 3 {
             let chars: Vec<u8> = hex
@@ -176,7 +184,7 @@ pub fn parse_color(s: &str) -> ratatui::style::Color {
                 .filter_map(|c| u8::from_str_radix(&c.to_string(), 16).ok())
                 .collect();
             if chars.len() == 3 {
-                return Color::Rgb(chars[0] * 17, chars[1] * 17, chars[2] * 17);
+                return Some(Color::Rgb(chars[0] * 17, chars[1] * 17, chars[2] * 17));
             }
         }
     }
@@ -189,12 +197,12 @@ pub fn parse_color(s: &str) -> ratatui::style::Color {
                 parts[1].trim().parse::<u8>(),
                 parts[2].trim().parse::<u8>(),
             ) {
-                return Color::Rgb(r, g, b);
+                return Some(Color::Rgb(r, g, b));
             }
         }
     }
 
-    match s.as_str() {
+    Some(match s.as_str() {
         "black" => Color::Black,
         "red" => Color::Red,
         "green" => Color::Green,
@@ -211,11 +219,8 @@ pub fn parse_color(s: &str) -> ratatui::style::Color {
         "lightblue" => Color::LightBlue,
         "lightmagenta" => Color::LightMagenta,
         "lightcyan" => Color::LightCyan,
-        _ => {
-            warn!(color = s, "unknown color, defaulting to cyan");
-            Color::Cyan
-        }
-    }
+        _ => return None,
+    })
 }
 
 #[cfg(test)]

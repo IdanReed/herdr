@@ -380,6 +380,14 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # [ui.sidebar.notifications]
 # enabled = false
 
+# Space name colors. Each rule matches a regex against the space's directory; the
+# first match wins, and other spaces use space_color_default. Unset keeps the theme.
+# [ui.sidebar]
+# space_color_default = "#f0883e"
+# [[ui.sidebar.space_colors]]
+# cwd = '(?i)[\\/]projects[\\/]prod-'
+# color = "#f85149"
+
 # Background notification popup delivery
 [ui.toast]
 # off = disable pop-up notifications

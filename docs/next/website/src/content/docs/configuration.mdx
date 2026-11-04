@@ -452,6 +452,25 @@ Without any of these, the token is absent, and under a space heading it says `Un
 
 Sidebar text uses two brightness levels. The section headers (spaces, machines, agents, notifications), the focused space, and the focused agent are bright and bold. Space headings in the Agent panel and all other space and agent rows use the dimmer unfocused text color.
 
+Color space names by the space's directory:
+
+```toml
+[ui.sidebar]
+space_color_default = "#f0883e"
+
+[[ui.sidebar.space_colors]]
+cwd = '(?i)[\\/]projects[\\/]prod-'
+color = "#f85149"
+
+[[ui.sidebar.space_colors]]
+cwd = '[\\/]projects[\\/]'
+color = "green"
+```
+
+Each `space_colors` rule has a `cwd` regex and a `color`. Herdr matches the regex against the directory that the space's automatic name and Git details come from: the working directory of the root pane of the space's first tab, or the directory the space was created with when that pane has none. Herdr refreshes it in the background when that pane changes directory. The first matching rule wins. A space that matches no rule uses `space_color_default`; with `space_color_default` unset, it keeps the theme colors. Colors accept the same values as `[theme.custom]`. The regex uses Rust `regex` syntax, matches anywhere in the path unless anchored, and is case-sensitive unless it starts with `(?i)`. TOML literal strings in single quotes keep backslashes as written.
+
+The color applies to space names in the Spaces list and to the space headings in the Agent panel, at the same brightness levels as other sidebar text: the focused space shows the full color in bold, and other space names and all headings show a dimmed form of it. An invalid regex, a missing `cwd`, or an invalid color skips that rule, and an invalid `space_color_default` is ignored; `herdr config check` and config reloads report each one. Space colors reload with the rest of the config.
+
 `row_gap` controls the blank terminal rows between entries, independently for the Agent and Space panels. It defaults to `0`, which packs entries together; set it to `1` to restore the previous spacing. It does not add spacing between the content lines declared in `rows`. Consecutive indented worktree children remain packed as one Space group.
 
 Override the complete Agent layout for a known agent under `rows_by_agent`:

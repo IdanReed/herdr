@@ -524,6 +524,99 @@ pub struct SidebarConfig {
     pub agents: AgentsSidebarConfig,
     pub spaces: SpacesSidebarConfig,
     pub notifications: NotificationsSidebarConfig,
+    /// Color for space names that match no `space_colors` rule. Unset keeps the theme colors.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub space_color_default: Option<String>,
+    /// Ordered rules that color space names by the space's directory. The first match wins.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub space_colors: Vec<SpaceColorRuleConfig>,
+}
+
+/// One `[[ui.sidebar.space_colors]]` entry.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct SpaceColorRuleConfig {
+    /// Regex matched against the space's directory.
+    pub cwd: String,
+    /// Color for matching space names, in the theme color syntax.
+    pub color: String,
+}
+
+/// Space name colors compiled from `[ui.sidebar]`. Invalid rules are left out.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SpaceColors {
+    default: Option<ratatui::style::Color>,
+    rules: Vec<(regex::Regex, ratatui::style::Color)>,
+}
+
+impl SpaceColors {
+    /// Compiles the rules and returns one diagnostic for each value it skips.
+    pub(crate) fn compile(config: &SidebarConfig) -> (Self, Vec<String>) {
+        let mut diagnostics = Vec::new();
+        let default = config.space_color_default.as_deref().and_then(|value| {
+            let color = crate::config::try_parse_color(value);
+            if color.is_none() {
+                diagnostics.push(format!(
+                    "ui.sidebar.space_color_default = {value:?} is not a color; using theme colors"
+                ));
+            }
+            color
+        });
+        let rules = config
+            .space_colors
+            .iter()
+            .enumerate()
+            .filter_map(|(index, rule)| {
+                let key = format!("ui.sidebar.space_colors[{index}]");
+                let color = crate::config::try_parse_color(&rule.color);
+                if color.is_none() {
+                    diagnostics.push(format!(
+                        "{key}.color = {:?} is not a color; skipping the rule",
+                        rule.color
+                    ));
+                }
+                let pattern = match regex::Regex::new(&rule.cwd) {
+                    Ok(_) if rule.cwd.is_empty() => {
+                        diagnostics.push(format!("{key}.cwd is empty; skipping the rule"));
+                        None
+                    }
+                    Ok(pattern) => Some(pattern),
+                    Err(error) => {
+                        diagnostics.push(format!(
+                            "{key}.cwd = {:?} is not a valid regex ({}); skipping the rule",
+                            rule.cwd,
+                            regex_error_summary(&error)
+                        ));
+                        None
+                    }
+                };
+                Some((pattern?, color?))
+            })
+            .collect();
+        (Self { default, rules }, diagnostics)
+    }
+
+    /// Color for a space whose directory is `cwd`: the first matching rule, else the default.
+    pub(crate) fn color_for(&self, cwd: Option<&str>) -> Option<ratatui::style::Color> {
+        cwd.and_then(|cwd| {
+            self.rules
+                .iter()
+                .find(|(pattern, _)| pattern.is_match(cwd))
+                .map(|(_, color)| *color)
+        })
+        .or(self.default)
+    }
+}
+
+/// The last line of a regex error, which states the problem without the caret diagram.
+fn regex_error_summary(error: &regex::Error) -> String {
+    let text = error.to_string();
+    text.lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| line.strip_prefix("error: ").unwrap_or(line).to_owned())
+        .unwrap_or(text)
 }
 
 #[cfg(test)]
@@ -554,6 +647,8 @@ mod tests {
         assert!(!toml::to_string(&grouped.ui.sidebar)
             .unwrap()
             .contains("group_by_space"));
+        assert_eq!(config.space_color_default, None);
+        assert!(config.space_colors.is_empty());
         assert_eq!(
             config.spaces.rows,
             vec![
@@ -593,6 +688,90 @@ mod tests {
                 AgentSidebarToken::Tab,
             ]]
         );
+    }
+
+    fn compiled_space_colors(input: &str) -> (SpaceColors, Vec<String>) {
+        let config: crate::config::Config = toml::from_str(input).expect("space colors");
+        SpaceColors::compile(&config.ui.sidebar)
+    }
+
+    #[test]
+    fn space_colors_use_the_first_matching_rule_then_the_default() {
+        use ratatui::style::Color;
+        let (colors, diagnostics) = compiled_space_colors(
+            r##"
+[ui.sidebar]
+space_color_default = "#f0883e"
+
+[[ui.sidebar.space_colors]]
+cwd = '(?i)[\\/]work[\\/]prod-'
+color = "#f85149"
+
+[[ui.sidebar.space_colors]]
+cwd = '[\\/]work[\\/]'
+color = "rgb(1, 2, 3)"
+
+[[ui.sidebar.space_colors]]
+cwd = 'side'
+color = "magenta"
+"##,
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        for (cwd, expected) in [
+            (Some("C:\\Work\\PROD-api"), Color::Rgb(0xf8, 0x51, 0x49)),
+            (Some("/home/me/work/prod-api"), Color::Rgb(0xf8, 0x51, 0x49)),
+            (Some("/home/me/work/api"), Color::Rgb(1, 2, 3)),
+            (Some("/home/me/side-project"), Color::Magenta),
+            (Some("/tmp"), Color::Rgb(0xf0, 0x88, 0x3e)),
+            (None, Color::Rgb(0xf0, 0x88, 0x3e)),
+        ] {
+            assert_eq!(colors.color_for(cwd), Some(expected), "{cwd:?}");
+        }
+
+        let (unset, diagnostics) = compiled_space_colors("[ui.sidebar]\n");
+        assert!(diagnostics.is_empty());
+        assert_eq!(unset.color_for(Some("/tmp")), None);
+    }
+
+    #[test]
+    fn invalid_space_colors_are_diagnosed_and_skipped() {
+        use ratatui::style::Color;
+        let input = r##"
+[ui.sidebar]
+space_color_default = "not-a-color"
+
+[[ui.sidebar.space_colors]]
+cwd = '(unclosed'
+color = "#f85149"
+
+[[ui.sidebar.space_colors]]
+cwd = 'prod'
+color = "#12"
+
+[[ui.sidebar.space_colors]]
+color = "red"
+
+[[ui.sidebar.space_colors]]
+cwd = 'prod'
+color = "green"
+"##;
+        let (colors, diagnostics) = compiled_space_colors(input);
+        assert_eq!(diagnostics.len(), 4, "{diagnostics:?}");
+        assert!(diagnostics[0].starts_with("ui.sidebar.space_color_default"));
+        assert!(diagnostics[1].starts_with("ui.sidebar.space_colors[0].cwd"));
+        assert!(diagnostics[1].contains("not a valid regex"));
+        assert!(!diagnostics[1].contains('\n'));
+        assert!(diagnostics[2].starts_with("ui.sidebar.space_colors[1].color"));
+        assert!(diagnostics[3].starts_with("ui.sidebar.space_colors[2].cwd is empty"));
+        assert_eq!(colors.color_for(Some("/work/prod")), Some(Color::Green));
+        assert_eq!(colors.color_for(Some("/work/other")), None);
+
+        // `herdr config check` reports the same problems.
+        let config: crate::config::Config = toml::from_str(input).unwrap();
+        let reported = config.collect_diagnostics();
+        for diagnostic in &diagnostics {
+            assert!(reported.contains(diagnostic), "{diagnostic}");
+        }
     }
 
     #[test]

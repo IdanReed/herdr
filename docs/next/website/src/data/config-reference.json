@@ -1122,6 +1122,12 @@
           "description": "Show the notification log as a third expanded sidebar section below the agents, so spaces, agents, and notifications each take a third. Entries come from herdr notification add or the notification.add socket method."
         },
         {
+          "key": "ui.sidebar.space_color_default",
+          "type": "color",
+          "default": "unset",
+          "description": "Color for space names in the Spaces list and the Agent panel headings when no [[ui.sidebar.space_colors]] rule matches. Each rule has a cwd regex, matched against the space's directory, and a color; the first match wins. Unset keeps the theme colors. Accepts hex, named colors, rgb(r,g,b), or reset aliases."
+        },
+        {
           "key": "ui.sidebar.spaces.row_gap",
           "type": "integer",
           "default": "0",

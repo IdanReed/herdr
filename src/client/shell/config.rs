@@ -117,6 +117,7 @@ impl ClientShellConfig {
             spaces: config.ui.sidebar.spaces.clone(),
             agents: config.ui.sidebar.agents.clone(),
             notifications: config.ui.sidebar.notifications,
+            space_colors: crate::config::SpaceColors::compile(&config.ui.sidebar).0,
             status_indicators: config.ui.status_indicators,
             sound_enabled: config.ui.sound.enabled,
             toast_delivery: config.ui.toast.delivery,
@@ -344,6 +345,10 @@ impl ClientShellConfig {
                 self.spaces = ui.sidebar.spaces.clone();
                 self.agents = ui.sidebar.agents.clone();
                 self.notifications = ui.sidebar.notifications;
+                let (space_colors, space_color_diagnostics) =
+                    crate::config::SpaceColors::compile(&ui.sidebar);
+                self.space_colors = space_colors;
+                diagnostics.extend(space_color_diagnostics);
                 self.status_indicators = ui.status_indicators;
                 self.sound_enabled = ui.sound.enabled;
                 self.toast_delivery = ui.toast.delivery;
@@ -474,6 +479,7 @@ mod tests {
         let mut next = Config::default();
         next.ui.sidebar_width = 31;
         next.ui.tab_bar_position = TabBarPositionConfig::Bottom;
+        next.ui.sidebar.space_color_default = Some("#010203".into());
         next.ui.status_indicators = crate::config::StatusIndicatorStyle::Symbols;
         next.ui.sidebar.agents = toml::from_str("rows = [[{ token = 'machine', rules = [{ equals = 'Local', bold = true }] }]]\nrow_gap = 2").unwrap();
         next.keys.prefix = crate::config::BindingConfig::one("ctrl+a");
@@ -483,6 +489,10 @@ mod tests {
         assert!(diagnostics.is_empty());
         assert_eq!(shell.sidebar_width, 31);
         assert_eq!(shell.tab_bar_position, TabBarPositionConfig::Bottom);
+        assert_eq!(
+            shell.space_colors.color_for(None),
+            Some(ratatui::style::Color::Rgb(1, 2, 3))
+        );
         assert_eq!(
             shell.status_indicators,
             crate::config::StatusIndicatorStyle::Symbols

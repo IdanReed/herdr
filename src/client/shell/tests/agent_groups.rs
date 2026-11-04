@@ -395,3 +395,99 @@ fn sidebar_text_uses_two_brightness_levels() {
         normal
     );
 }
+
+#[test]
+fn space_colors_follow_the_brightness_levels() {
+    let config: Config = toml::from_str(
+        r##"
+[ui.sidebar]
+space_color_default = "#f0883e"
+
+[[ui.sidebar.space_colors]]
+cwd = '/work/prod-'
+color = "#f85149"
+"##,
+    )
+    .expect("space colors");
+    let mut snapshot = named_snapshot();
+    snapshot.workspaces[0].cwd = Some("/work/prod-api".into());
+    let mut state = shell(snapshot, &config);
+    let frame = state.compose(106, 30).expect("frame");
+    let palette = state.config.palette.clone();
+    let red = Color::Rgb(0xf8, 0x51, 0x49);
+    let orange = Color::Rgb(0xf0, 0x88, 0x3e);
+    let dimmed = |color| {
+        super::super::render::sidebar::space_name_style(Some(color), false, &palette)
+            .fg
+            .expect("dimmed color")
+    };
+    assert_ne!(dimmed(red), red);
+    assert_ne!(dimmed(orange), orange);
+
+    // The focused space shows the full color; other names show the dimmed form.
+    let spaces = state.hits.workspace_body;
+    assert_eq!(text_style(&frame, spaces, "alpha"), (red, true));
+    assert_eq!(text_style(&frame, spaces, "beta"), (dimmed(orange), false));
+    let agents = state.hits.agent_body;
+    assert_eq!(text_style(&frame, agents, "alpha"), (dimmed(red), false));
+    assert_eq!(text_style(&frame, agents, "beta"), (dimmed(orange), false));
+    // Agent rows keep the theme colors.
+    assert_eq!(
+        text_style(&frame, agents, "fix login"),
+        (palette.text, true)
+    );
+}
+
+#[test]
+fn dimmed_space_colors_move_toward_the_background() {
+    let mut palette = crate::app::state::Palette::catppuccin();
+    palette.sidebar_bg = Color::Rgb(0, 0, 0);
+    let style = super::super::render::sidebar::space_name_style(
+        Some(Color::Rgb(200, 100, 0)),
+        false,
+        &palette,
+    );
+    assert_eq!(style.fg, Some(Color::Rgb(156, 78, 0)));
+    assert!(!style.add_modifier.contains(Modifier::BOLD));
+
+    // Named colors and unknown backgrounds fall back to the terminal's dim attribute.
+    let style =
+        super::super::render::sidebar::space_name_style(Some(Color::Green), false, &palette);
+    assert_eq!(style.fg, Some(Color::Green));
+    assert!(style.add_modifier.contains(Modifier::DIM));
+    palette.sidebar_bg = Color::Reset;
+    palette.panel_bg = Color::Reset;
+    palette.surface_dim = Color::Reset;
+    let style = super::super::render::sidebar::space_name_style(
+        Some(Color::Rgb(200, 100, 0)),
+        false,
+        &palette,
+    );
+    assert_eq!(style.fg, Some(Color::Rgb(200, 100, 0)));
+    assert!(style.add_modifier.contains(Modifier::DIM));
+}
+
+#[test]
+fn space_colors_apply_after_a_config_reload() {
+    let mut state = shell(grouped_snapshot(1), &Config::default());
+    let frame = state.compose(106, 30).expect("frame");
+    let spaces = state.hits.workspace_body;
+    assert_eq!(
+        text_style(&frame, spaces, "alpha"),
+        (state.config.palette.text, true)
+    );
+
+    let next: Config = toml::from_str(
+        "[ui.sidebar]\nspace_color_default = \"#123456\"\n\n[[ui.sidebar.space_colors]]\ncwd = '/never'\ncolor = 'not-a-color'\n",
+    )
+    .unwrap();
+    // A reload reports the rules it skips, like `herdr config check`.
+    let diagnostics = state.config.apply_live_config(&next, &[], &[]);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert!(diagnostics[0].starts_with("ui.sidebar.space_colors[0].color"));
+    let frame = state.compose(106, 30).expect("frame");
+    assert_eq!(
+        text_style(&frame, spaces, "alpha"),
+        (Color::Rgb(0x12, 0x34, 0x56), true)
+    );
+}

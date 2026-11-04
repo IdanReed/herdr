@@ -108,6 +108,7 @@ pub(super) fn snapshot_with_completions(
                         is_linked_worktree: worktree.is_linked_worktree,
                     }),
                 agent_status: workspace.agent_status,
+                cwd: Some(state.cached_identity_cwd.display().to_string()),
             }
         })
         .collect();
