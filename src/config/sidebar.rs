@@ -113,6 +113,7 @@ pub enum AgentSidebarToken {
     Tab,
     Pane,
     Agent,
+    SessionName,
     TerminalTitle,
     TerminalTitleStripped,
     Custom(String),
@@ -277,6 +278,7 @@ fn agent_token_name(token: &AgentSidebarToken) -> String {
         AgentSidebarToken::Tab => "tab".into(),
         AgentSidebarToken::Pane => "pane".into(),
         AgentSidebarToken::Agent => "agent".into(),
+        AgentSidebarToken::SessionName => "session_name".into(),
         AgentSidebarToken::TerminalTitle => "terminal_title".into(),
         AgentSidebarToken::TerminalTitleStripped => "terminal_title_stripped".into(),
         AgentSidebarToken::Custom(name) => format!("${name}"),
@@ -336,6 +338,7 @@ impl<'de> Deserialize<'de> for AgentSidebarToken {
                 ("tab", Self::Tab),
                 ("pane", Self::Pane),
                 ("agent", Self::Agent),
+                ("session_name", Self::SessionName),
                 ("terminal_title", Self::TerminalTitle),
                 ("terminal_title_stripped", Self::TerminalTitleStripped),
             ],
@@ -443,8 +446,8 @@ const DEFAULT_AGENT_ROWS: [&[AgentSidebarToken]; 2] = [
 
 impl AgentsSidebarConfig {
     /// Under a space heading the default layout shrinks to one line that
-    /// names the tab, because the heading already names the space and the
-    /// agent is not what tells rows apart. Custom layouts stay as written.
+    /// names the agent session, because the heading already names the space.
+    /// Custom layouts stay as written.
     pub(crate) fn rows_for_agent(
         &self,
         agent: Option<Agent>,
@@ -455,19 +458,23 @@ impl AgentsSidebarConfig {
         {
             return std::borrow::Cow::Borrowed(rows);
         }
-        let default_layout = self.rows.len() == DEFAULT_AGENT_ROWS.len()
+        if under_heading && self.uses_default_rows() {
+            return std::borrow::Cow::Owned(vec![vec![
+                AgentSidebarToken::StateIcon,
+                AgentSidebarToken::SessionName,
+            ]]);
+        }
+        std::borrow::Cow::Borrowed(&self.rows)
+    }
+
+    /// Whether `rows` is the built-in layout, which shows `session_name` under a heading.
+    pub(crate) fn uses_default_rows(&self) -> bool {
+        self.rows.len() == DEFAULT_AGENT_ROWS.len()
             && self
                 .rows
                 .iter()
                 .zip(DEFAULT_AGENT_ROWS)
-                .all(|(row, default)| row.as_slice() == default);
-        if under_heading && default_layout {
-            return std::borrow::Cow::Owned(vec![vec![
-                AgentSidebarToken::StateIcon,
-                AgentSidebarToken::Tab,
-            ]]);
-        }
-        std::borrow::Cow::Borrowed(&self.rows)
+                .all(|(row, default)| row.as_slice() == default)
     }
 }
 
@@ -559,11 +566,37 @@ mod tests {
     }
 
     #[test]
+    fn default_layout_names_the_session_under_a_heading() {
+        let config = AgentsSidebarConfig::default();
+        assert!(config.uses_default_rows());
+        assert_eq!(
+            config.rows_for_agent(None, true).into_owned(),
+            vec![vec![
+                AgentSidebarToken::StateIcon,
+                AgentSidebarToken::SessionName,
+            ]]
+        );
+        assert_eq!(config.rows_for_agent(None, false).into_owned(), config.rows);
+
+        let custom: AgentsSidebarConfig =
+            toml::from_str(r#"rows = [["state_icon", "session_name", "tab"]]"#).unwrap();
+        assert!(!custom.uses_default_rows());
+        assert_eq!(
+            custom.rows_for_agent(None, true).into_owned(),
+            vec![vec![
+                AgentSidebarToken::StateIcon,
+                AgentSidebarToken::SessionName,
+                AgentSidebarToken::Tab,
+            ]]
+        );
+    }
+
+    #[test]
     fn parses_builtin_and_arbitrary_custom_tokens() {
         let config: crate::config::Config = toml::from_str(
             r#"
 [ui.sidebar.agents]
-rows = [["state_icon", "workspace"], ["state_text", "agent", "$summary"], ["terminal_title", "terminal_title_stripped", "$terminal_title"]]
+rows = [["state_icon", "workspace"], ["state_text", "agent", "$summary"], ["terminal_title", "terminal_title_stripped", "$terminal_title"], ["session_name"]]
 row_gap = 1
 
 [ui.sidebar.agents.rows_by_agent]
@@ -591,6 +624,10 @@ row_gap = 3
                 AgentSidebarToken::TerminalTitleStripped,
                 AgentSidebarToken::Custom("terminal_title".into()),
             ]
+        );
+        assert_eq!(
+            config.ui.sidebar.agents.rows[3],
+            vec![AgentSidebarToken::SessionName]
         );
         assert_eq!(
             config.ui.sidebar.agents.rows_by_agent["claude"],

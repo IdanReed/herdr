@@ -1452,11 +1452,13 @@ fn aggregate_agents_group_under_machine_and_space_headings() {
 
     let mut local = snapshot();
     local.agents = vec![agent("local agent", AgentStatus::Idle, 1)];
+    local.agents[0].name = None;
     state.set_snapshot(Box::new(local));
     state.set_pane_surface(surface());
     let mut remote = snapshot();
     remote.boot_id = "remote-boot".into();
     remote.agents = vec![agent("remote agent", AgentStatus::Blocked, 1)];
+    remote.agents[0].name = None;
     state.set_endpoint_snapshot(&endpoint_id, Box::new(remote));
 
     let frame = state.compose(100, 28).expect("grouped endpoint frame");
@@ -1483,15 +1485,15 @@ fn aggregate_agents_group_under_machine_and_space_headings() {
     assert!(local_agent < remote_heading);
     assert!(remote_heading < remote_agent);
     // The heading names the machine and space, so agent rows name only the
-    // tab, which here has no custom name.
+    // session, and these agents have none.
     for index in [local_agent, remote_agent] {
         let row = &rows[index];
         assert!(
             !row.contains("Local ·") && !row.contains("Build ·"),
             "{row}"
         );
-        assert!(!row.contains("agent") && !row.contains("pi"), "{row}");
-        assert!(row.contains("unnamed"), "{row}");
+        assert!(!row.contains("agent") && !row.contains(" pi"), "{row}");
+        assert!(row.contains("Unnamed"), "{row}");
     }
     assert_eq!(state.hits.endpoint_agents.len(), 2);
 }

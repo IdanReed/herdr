@@ -18,6 +18,7 @@ pub(crate) enum ResolvedTokenKind {
     Tab(String),
     Pane(String),
     Agent(String),
+    SessionName(String),
     TerminalTitle(String),
     Branch(String),
     GitStatus { ahead: usize, behind: usize },
@@ -33,6 +34,7 @@ impl ResolvedTokenKind {
             | Self::Tab(value)
             | Self::Pane(value)
             | Self::Agent(value)
+            | Self::SessionName(value)
             | Self::TerminalTitle(value)
             | Self::Branch(value)
             | Self::Custom(value) => Some(value),
@@ -58,6 +60,8 @@ pub(crate) struct AgentTokenContext<'a> {
     pub(crate) tab: Option<&'a str>,
     pub(crate) pane: Option<&'a str>,
     pub(crate) agent_label: Option<&'a str>,
+    /// Name of the agent session, which the caller has already resolved.
+    pub(crate) session_name: Option<&'a str>,
     pub(crate) terminal_title: Option<&'a str>,
     pub(crate) terminal_title_stripped: Option<&'a str>,
     pub(crate) canonical_agent: Option<crate::detect::Agent>,
@@ -104,6 +108,9 @@ pub(crate) fn agent_rows(
                         AgentSidebarToken::Agent => context
                             .agent_label
                             .map(|value| ResolvedTokenKind::Agent(value.to_string())),
+                        AgentSidebarToken::SessionName => context
+                            .session_name
+                            .map(|value| ResolvedTokenKind::SessionName(value.to_string())),
                         AgentSidebarToken::TerminalTitle => context
                             .terminal_title
                             .map(|value| ResolvedTokenKind::TerminalTitle(value.to_string())),
@@ -204,6 +211,7 @@ mod tests {
         tab: Option<String>,
         pane: Option<String>,
         agent_label: Option<String>,
+        session_name: Option<String>,
         terminal_title: Option<String>,
         terminal_title_stripped: Option<String>,
         canonical_agent: Option<crate::detect::Agent>,
@@ -216,6 +224,7 @@ mod tests {
             tab: None,
             pane: None,
             agent_label: Some("pi".into()),
+            session_name: None,
             terminal_title: None,
             terminal_title_stripped: None,
             canonical_agent: Some(crate::detect::Agent::Pi),
@@ -230,6 +239,7 @@ mod tests {
             tab: entry.tab.as_deref(),
             pane: entry.pane.as_deref(),
             agent_label: entry.agent_label.as_deref(),
+            session_name: entry.session_name.as_deref(),
             terminal_title: entry.terminal_title.as_deref(),
             terminal_title_stripped: entry.terminal_title_stripped.as_deref(),
             canonical_agent: entry.canonical_agent,
@@ -242,6 +252,7 @@ mod tests {
     fn rows_under_a_space_heading_leave_out_the_space_and_machine() {
         let mut entry = entry();
         entry.tab = Some("tests".into());
+        entry.session_name = Some("review".into());
         let mut heading = context(&entry);
         heading.machine = Some("Local");
         heading.under_heading = true;
@@ -251,12 +262,12 @@ mod tests {
                 .collect::<Vec<_>>()
         };
 
-        // The default two-line layout becomes one line that names the tab.
+        // The default two-line layout becomes one line that names the session.
         assert_eq!(
             kinds(agent_rows(&AgentsSidebarConfig::default(), heading, "idle")),
             vec![vec![
                 ResolvedTokenKind::StateIcon,
-                ResolvedTokenKind::Tab("tests".into()),
+                ResolvedTokenKind::SessionName("review".into()),
             ]]
         );
 

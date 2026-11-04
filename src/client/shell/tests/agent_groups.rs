@@ -63,6 +63,20 @@ fn grouped_config() -> Config {
     config
 }
 
+/// `grouped_snapshot(2)` with a session name from each source the panel reads.
+fn named_snapshot() -> ClientShellSnapshot {
+    let mut snapshot = grouped_snapshot(2);
+    snapshot.agents[0].name = None;
+    snapshot.agents[0].terminal_title = Some("✳ fix login".into());
+    snapshot.agents[0].terminal_title_stripped = Some("fix login".into());
+    // A bare default title is not a name.
+    snapshot.agents[1].name = None;
+    snapshot.agents[1].terminal_title = Some("✳ pi".into());
+    snapshot.agents[1].terminal_title_stripped = Some("pi".into());
+    snapshot.agents[2].name = Some("reviewer".into());
+    snapshot
+}
+
 fn shell(snapshot: ClientShellSnapshot, config: &Config) -> ClientShellState {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(config));
     state.set_snapshot(Box::new(snapshot));
@@ -106,7 +120,7 @@ fn agent_row_index(state: &ClientShellState, pane_id: &str) -> Option<usize> {
 
 #[test]
 fn agents_appear_under_a_heading_for_their_space() {
-    let mut state = shell(grouped_snapshot(2), &grouped_config());
+    let mut state = shell(named_snapshot(), &grouped_config());
     let rows = agent_body_rows(&mut state, 30);
 
     let position = |predicate: &dyn Fn(&str) -> bool| {
@@ -128,19 +142,17 @@ fn agents_appear_under_a_heading_for_their_space() {
     assert_eq!(beta, second + 2, "{rows:#?}");
     assert!(rows[second + 1].is_empty(), "{rows:#?}");
 
-    // One indented line per agent that names the tab, not the agent or space.
+    // One indented line per agent that names its session, not the agent, tab, or space.
     for index in [first, second, third] {
         let row = &rows[index];
         assert!(row.starts_with("  "), "{row:?}");
         assert!(!row.contains("alpha") && !row.contains("beta"), "{row:?}");
-        assert!(!row.contains("agent") && !row.contains("pi"), "{row:?}");
+        assert!(!row.contains(" pi"), "{row:?}");
     }
     assert_eq!(second, first + 1, "{rows:#?}");
-    // The alpha tab keeps its automatic label, so its rows say so.
-    assert!(rows[first].contains("unnamed"), "{}", rows[first]);
-    assert!(rows[second].contains("unnamed"), "{}", rows[second]);
-    assert!(rows[third].contains("review"), "{}", rows[third]);
-    assert!(!rows[third].contains("unnamed"), "{}", rows[third]);
+    assert!(rows[first].ends_with("fix login"), "{}", rows[first]);
+    assert!(rows[second].ends_with("Unnamed"), "{}", rows[second]);
+    assert!(rows[third].ends_with("reviewer"), "{}", rows[third]);
 
     let hit_panes = state
         .hits

@@ -10,8 +10,8 @@ use ratatui::{
 
 use super::*;
 
-/// What the `tab` token says under a space heading when the tab has no custom name.
-pub(super) const UNNAMED_TAB_LABEL: &str = "unnamed";
+/// What the `session_name` token says under a space heading when the agent has no name.
+pub(super) const UNNAMED_SESSION_LABEL: &str = "Unnamed";
 
 pub(super) struct AgentRow {
     pub(super) pane_id: String,
@@ -360,17 +360,13 @@ pub(super) fn agent_row(
         .iter()
         .filter(|candidate| candidate.workspace_id == agent.workspace_id)
         .count();
-    // Under a heading the row is named by its tab, so a tab without a custom
+    let tab_label = tab
+        .filter(|tab| tab_count > 1 || tab.custom_label)
+        .map(|tab| tab.label.as_str());
+    // Under a heading the row is named by its session, so an agent without a
     // name still gets a label instead of leaving the row blank.
-    let tab_label = if under_heading {
-        Some(
-            tab.filter(|tab| tab.custom_label)
-                .map_or(UNNAMED_TAB_LABEL, |tab| tab.label.as_str()),
-        )
-    } else {
-        tab.filter(|tab| tab_count > 1 || tab.custom_label)
-            .map(|tab| tab.label.as_str())
-    };
+    let session_name = super::agent_names::session_name(agent, pane, &workspace.label)
+        .or_else(|| under_heading.then(|| UNNAMED_SESSION_LABEL.to_owned()));
     let agent_label = agent
         .display_agent
         .as_deref()
@@ -402,6 +398,7 @@ pub(super) fn agent_row(
                 .as_deref()
                 .or_else(|| pane.and_then(|pane| pane.label.as_deref())),
             agent_label,
+            session_name: session_name.as_deref(),
             terminal_title: agent.terminal_title.as_deref(),
             terminal_title_stripped: agent.terminal_title_stripped.as_deref(),
             canonical_agent,

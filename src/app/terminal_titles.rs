@@ -7,20 +7,28 @@ use crate::layout::PaneId;
 pub(crate) struct TerminalTitleChanges {
     pub(crate) raw_changed: bool,
     pub(crate) stripped_changed: bool,
+    /// The stripped title changed in a pane that hosts an agent.
+    pub(crate) agent_stripped_changed: bool,
 }
 
 impl App {
     pub(crate) fn terminal_title_sidebar_changed(&self, changes: &TerminalTitleChanges) -> bool {
         let config = &self.state.sidebar_agents;
-        std::iter::once(&config.rows)
-            .chain(config.rows_by_agent.values())
-            .flatten()
-            .flatten()
-            .any(|token| match token.parts().0 {
-                crate::config::AgentSidebarToken::TerminalTitle => changes.raw_changed,
-                crate::config::AgentSidebarToken::TerminalTitleStripped => changes.stripped_changed,
-                _ => false,
-            })
+        // Agents under a space heading show `session_name` with the default layout,
+        // and agent session names can come from the stripped title.
+        (changes.agent_stripped_changed && config.uses_default_rows())
+            || std::iter::once(&config.rows)
+                .chain(config.rows_by_agent.values())
+                .flatten()
+                .flatten()
+                .any(|token| match token.parts().0 {
+                    crate::config::AgentSidebarToken::TerminalTitle => changes.raw_changed,
+                    crate::config::AgentSidebarToken::TerminalTitleStripped => {
+                        changes.stripped_changed
+                    }
+                    crate::config::AgentSidebarToken::SessionName => changes.agent_stripped_changed,
+                    _ => false,
+                })
     }
 
     pub(crate) fn sync_pending_terminal_titles(&mut self) -> TerminalTitleChanges {
@@ -64,6 +72,8 @@ impl App {
             let change = terminal.set_terminal_title(title);
             changes.raw_changed |= change.raw_changed;
             changes.stripped_changed |= change.stripped_changed;
+            changes.agent_stripped_changed |=
+                change.stripped_changed && terminal.is_agent_terminal();
             if change.stripped_changed {
                 publish.push((ws_idx, pane_id));
             }
@@ -115,6 +125,7 @@ mod tests {
             TerminalTitleChanges {
                 raw_changed: true,
                 stripped_changed: true,
+                agent_stripped_changed: true,
             }
         );
         let pane = app.pane_info(0, pane_id).unwrap();
@@ -136,6 +147,7 @@ mod tests {
             TerminalTitleChanges {
                 raw_changed: true,
                 stripped_changed: false,
+                agent_stripped_changed: false,
             }
         );
         let pane = app.pane_info(0, pane_id).unwrap();
@@ -231,6 +243,42 @@ mod tests {
             vec![vec![crate::config::AgentSidebarToken::TerminalTitle]],
         );
         assert!(app.terminal_title_sidebar_changed(&spinner_only));
+    }
+
+    #[test]
+    fn session_names_redraw_for_stripped_title_changes() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &Config::default(),
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        let spinner_only = TerminalTitleChanges {
+            raw_changed: true,
+            ..TerminalTitleChanges::default()
+        };
+        let renamed = TerminalTitleChanges {
+            raw_changed: true,
+            stripped_changed: true,
+            agent_stripped_changed: true,
+        };
+        let shell_title = TerminalTitleChanges {
+            agent_stripped_changed: false,
+            ..renamed
+        };
+
+        // The default layout names agents by session under their space heading.
+        assert!(!app.terminal_title_sidebar_changed(&spinner_only));
+        assert!(!app.terminal_title_sidebar_changed(&shell_title));
+        assert!(app.terminal_title_sidebar_changed(&renamed));
+
+        app.state.sidebar_agents.rows = vec![vec![crate::config::AgentSidebarToken::Agent]];
+        assert!(!app.terminal_title_sidebar_changed(&renamed));
+        app.state.sidebar_agents.rows = vec![vec![crate::config::AgentSidebarToken::SessionName]];
+        assert!(!app.terminal_title_sidebar_changed(&spinner_only));
+        assert!(app.terminal_title_sidebar_changed(&renamed));
     }
 
     fn pane_updated_events(event_hub: &crate::api::EventHub) -> usize {

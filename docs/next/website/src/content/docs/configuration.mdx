@@ -391,6 +391,7 @@ Agent rows accept these built-in tokens:
 - `tab` — tab name when available.
 - `pane` — pane name when available.
 - `agent` — detected or reported agent display name.
+- `session_name` — name of the agent session; the sources are listed below.
 - `terminal_title` — latest OSC 0/2 terminal title after safety normalization.
 - `terminal_title_stripped` — the terminal title with one recognized leading activity or spinner glyph and its following whitespace removed.
 - `$name` — custom pane metadata named `name`.
@@ -444,7 +445,15 @@ Set `group_by_space = true` under `[ui.sidebar.agents]` to list agents under a h
 group_by_space = true
 ```
 
-Each heading names its space, plus the machine when several machines are connected, so agent rows leave out the `workspace` and `machine` tokens. Every heading after the first has one blank row above it, in addition to `row_gap`. With the default `rows`, each agent then takes one line: `state_icon` and `tab`. Under a heading the `tab` token always has a value: the tab's custom name, or `unnamed` when the tab still has its automatic number. Custom `rows` and `rows_by_agent` layouts are kept as written, minus the `workspace` and `machine` tokens. The priority order and custom agent views mix spaces together, so they show a flat list. Headings are not click targets, and agent navigation skips them.
+Each heading names its space, plus the machine when several machines are connected, so agent rows leave out the `workspace` and `machine` tokens. Every heading after the first has one blank row above it, in addition to `row_gap`. With the default `rows`, each agent then takes one line: `state_icon` and `session_name`. Under a heading the `session_name` token always has a value, `Unnamed` when the agent has no session name. Custom `rows` and `rows_by_agent` layouts are kept as written, minus the `workspace` and `machine` tokens. The priority order and custom agent views mix spaces together, so they show a flat list. Headings are not click targets, and agent navigation skips them.
+
+The `session_name` token takes the first of these that has a value:
+
+1. The Herdr agent name from `herdr agent start --name` or `herdr agent rename`.
+2. A title that an integration or script reports with `herdr pane report-metadata <pane_id> --source <name> --title <text>`.
+3. The agent's terminal title, with one leading activity or spinner glyph removed, as in `terminal_title_stripped`. Many agents put their session name there: Claude Code shows its topic title or the name from `/rename`, and Codex shows `<thread name> | <project>`. A title does not count when it only repeats a default: the agent's own name (for example `Claude Code` or `claude`), the name of the pane's directory, or the space name. A title that is a path, such as the shell executable that a console shows before the agent sets its title, does not count either. A trailing ` | <default>`, ` - <default>`, or ` — <default>` part is dropped, so in a pane whose directory is `my-repo`, `Fix login | my-repo` becomes `Fix login`.
+
+Without any of these, the token is absent, and under a space heading it says `Unnamed`.
 
 `row_gap` controls the blank terminal rows between entries, independently for the Agent and Space panels. It defaults to `0`, which packs entries together; set it to `1` to restore the previous spacing. It does not add spacing between the content lines declared in `rows`. Consecutive indented worktree children remain packed as one Space group.
 
