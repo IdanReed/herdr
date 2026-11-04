@@ -13,6 +13,14 @@ pub(super) use overlays::{render_client_overlay, render_context_menu, render_glo
 pub(super) use sidebar::{render_collapsed_sidebar, render_sidebar, workspace_entries};
 pub(super) use tabs::{render_tab_bar, tab_bar_status_width};
 
+/// Style of the sidebar section headers: spaces, machines, agents, and notifications.
+/// They are as bright as the focused space and agent rows.
+pub(in crate::client::shell) fn section_header_style(palette: &Palette) -> Style {
+    Style::default()
+        .fg(palette.text)
+        .add_modifier(Modifier::BOLD)
+}
+
 pub(in crate::client::shell) fn render_sidebar_background(
     buffer: &mut Buffer,
     area: Rect,

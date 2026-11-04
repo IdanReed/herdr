@@ -263,9 +263,7 @@ pub(super) fn render_expanded(
         workspace_area.y,
         workspace_area.width,
         " machines",
-        Style::default()
-            .fg(palette.overlay0)
-            .add_modifier(Modifier::BOLD),
+        super::render::section_header_style(palette),
     );
 
     let empty_collapsed_groups = HashSet::new();

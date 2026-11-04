@@ -1,5 +1,6 @@
 use super::*;
 use crate::raw_input::RawInputEvent;
+use ratatui::style::{Color, Modifier};
 
 /// Two spaces: "alpha" (focused) with `alpha_agents` agents and "beta" with one.
 fn grouped_snapshot(alpha_agents: usize) -> ClientShellSnapshot {
@@ -351,4 +352,46 @@ fn moving_to_an_agent_out_of_view_reveals_its_space_heading() {
         .rposition(|row| !row.is_empty())
         .unwrap_or_else(|| panic!("{rows:#?}"));
     assert_eq!(agent_row_index(&state, "pane_13"), Some(last), "{rows:#?}");
+}
+
+/// Foreground color and boldness of the first cell of `needle` inside `area`.
+fn text_style(frame: &FrameData, area: Rect, needle: &str) -> (Color, bool) {
+    let (x, y) = cell_symbol_position(frame, area, needle);
+    let buffer = frame.to_ratatui_buffer().expect("sidebar buffer");
+    let cell = &buffer[(x, y)];
+    (cell.fg, cell.modifier.contains(Modifier::BOLD))
+}
+
+fn sidebar_area(state: &ClientShellState) -> Rect {
+    Rect::new(0, 0, state.hits.sidebar_divider.x, 30)
+}
+
+#[test]
+fn sidebar_text_uses_two_brightness_levels() {
+    let mut state = shell(named_snapshot(), &Config::default());
+    let frame = state.compose(106, 30).expect("frame");
+    let palette = state.config.palette.clone();
+    let sidebar = sidebar_area(&state);
+    let bright = (palette.text, true);
+    let normal = (palette.subtext0, false);
+
+    // Section headers, the focused space, and the focused agent are bright.
+    assert_eq!(text_style(&frame, sidebar, "spaces"), bright);
+    assert_eq!(text_style(&frame, sidebar, "agents"), bright);
+    let spaces = state.hits.workspace_body;
+    assert_eq!(text_style(&frame, spaces, "alpha"), bright);
+    assert_eq!(
+        text_style(&frame, state.hits.agent_body, "fix login"),
+        bright
+    );
+
+    // Headings in the agents panel and every other row share the normal level.
+    assert_eq!(text_style(&frame, spaces, "beta"), normal);
+    assert_eq!(text_style(&frame, state.hits.agent_body, "alpha"), normal);
+    assert_eq!(text_style(&frame, state.hits.agent_body, "beta"), normal);
+    assert_eq!(text_style(&frame, state.hits.agent_body, "Unnamed"), normal);
+    assert_eq!(
+        text_style(&frame, state.hits.agent_body, "reviewer"),
+        normal
+    );
 }

@@ -450,6 +450,8 @@ The `session_name` token takes the first of these that has a value:
 
 Without any of these, the token is absent, and under a space heading it says `Unnamed`.
 
+Sidebar text uses two brightness levels. The section headers (spaces, machines, agents, notifications), the focused space, and the focused agent are bright and bold. Space headings in the Agent panel and all other space and agent rows use the dimmer unfocused text color.
+
 `row_gap` controls the blank terminal rows between entries, independently for the Agent and Space panels. It defaults to `0`, which packs entries together; set it to `1` to restore the previous spacing. It does not add spacing between the content lines declared in `rows`. Consecutive indented worktree children remain packed as one Space group.
 
 Override the complete Agent layout for a known agent under `rows_by_agent`:

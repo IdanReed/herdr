@@ -28,7 +28,6 @@ pub(super) enum AgentListItem<T> {
     /// Names the space of the agents that follow it.
     Heading {
         label: String,
-        current: bool,
     },
     Agent(T),
 }
@@ -40,17 +39,17 @@ pub(super) fn groups_by_space(agent_view_label: Option<&str>) -> bool {
 }
 
 /// Adds a heading wherever the space changes. `space` gives the key that
-/// identifies a row's space, the heading text, and whether it is focused.
+/// identifies a row's space and the heading text.
 pub(super) fn with_space_headings<T, K: PartialEq>(
     rows: Vec<T>,
-    space: impl Fn(&T) -> (K, String, bool),
+    space: impl Fn(&T) -> (K, String),
 ) -> Vec<AgentListItem<T>> {
     let mut items = Vec::with_capacity(rows.len());
     let mut previous = None;
     for row in rows {
-        let (key, label, current) = space(&row);
+        let (key, label) = space(&row);
         if previous.as_ref() != Some(&key) {
-            items.push(AgentListItem::Heading { label, current });
+            items.push(AgentListItem::Heading { label });
             previous = Some(key);
         }
         items.push(AgentListItem::Agent(row));
@@ -206,9 +205,7 @@ pub(super) fn render_agent_panel_header(
         area.y + 1,
         area.width,
         " agents",
-        Style::default()
-            .fg(config.palette.overlay0)
-            .add_modifier(Modifier::BOLD),
+        super::render::section_header_style(&config.palette),
     );
     if let Some(view_label) = agent_view_label {
         let width = display_width(view_label).min(area.width as usize) as u16;
@@ -279,8 +276,8 @@ pub(super) fn render_agent_list<T>(
         }
         let rect = Rect::new(body.x, y, content_width, height);
         match row {
-            AgentListItem::Heading { label, current } => {
-                render_space_heading(buffer, rect, label, *current, config);
+            AgentListItem::Heading { label } => {
+                render_space_heading(buffer, rect, label, config);
             }
             AgentListItem::Agent(row) => render_row(buffer, rect, row, hits),
         }
@@ -306,13 +303,8 @@ pub(super) fn agent_list_items(
     if !grouped {
         return rows.into_iter().map(AgentListItem::Agent).collect();
     }
-    let focused_workspace_id = snapshot.focused_workspace_id.as_deref();
     with_space_headings(rows, |row| {
-        (
-            row.workspace_id.clone(),
-            row.workspace_label.clone(),
-            focused_workspace_id == Some(row.workspace_id.as_str()),
-        )
+        (row.workspace_id.clone(), row.workspace_label.clone())
     })
 }
 
@@ -411,14 +403,13 @@ pub(super) fn render_agent_row(
     } else {
         Style::default()
     };
+    // The same two brightness levels as space rows: bright and bold when focused.
     let name_style = if row.focused {
         Style::default()
             .fg(palette.text)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default()
-            .fg(palette.subtext0)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(palette.subtext0)
     };
     let status_style = Style::default().fg(status_color(row.status, palette));
     let secondary = Style::default().fg(palette.overlay0);
@@ -455,14 +446,8 @@ pub(super) fn render_agent_row(
     }
 }
 
-/// ` name ───────` across the row, brighter for the focused space.
-fn render_space_heading(
-    buffer: &mut Buffer,
-    rect: Rect,
-    label: &str,
-    current: bool,
-    config: &ClientShellConfig,
-) {
+/// ` name ───────` across the row, as bright as an unfocused space or agent row.
+fn render_space_heading(buffer: &mut Buffer, rect: Rect, label: &str, config: &ClientShellConfig) {
     let palette = &config.palette;
     let width = usize::from(rect.width);
     let name = crate::ui::truncate_end(label, width.saturating_sub(3));
@@ -471,13 +456,7 @@ fn render_space_heading(
         rect.y,
         format!(" {name} "),
         width,
-        Style::default()
-            .fg(if current {
-                palette.text
-            } else {
-                palette.subtext0
-            })
-            .add_modifier(Modifier::BOLD),
+        Style::default().fg(palette.subtext0),
     );
     let rule_width = rect.right().saturating_sub(rule_x);
     buffer.set_stringn(

@@ -141,17 +141,10 @@ fn agent_list_items(
             .map(super::agent_sidebar::AgentListItem::Agent)
             .collect();
     }
-    let focused_workspace_id = endpoints
-        .iter()
-        .find(|endpoint| &endpoint.endpoint_id == active_endpoint_id)
-        .and_then(|endpoint| endpoint.snapshot.as_deref())
-        .and_then(|snapshot| snapshot.focused_workspace_id.as_deref());
     super::agent_sidebar::with_space_headings(rows, |row| {
         (
             (row.endpoint_id.clone(), row.agent.workspace_id.clone()),
             format!("{} · {}", row.machine_label, row.agent.workspace_label),
-            &row.endpoint_id == active_endpoint_id
-                && focused_workspace_id == Some(row.agent.workspace_id.as_str()),
         )
     })
 }

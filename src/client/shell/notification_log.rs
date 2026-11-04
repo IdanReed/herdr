@@ -120,9 +120,7 @@ pub(super) fn render_notification_log(
         area.y + 1,
         area.width,
         TITLE,
-        Style::default()
-            .fg(palette.overlay0)
-            .add_modifier(Modifier::BOLD),
+        super::render::section_header_style(palette),
     );
     let unread = entries.iter().filter(|entry| !entry.read).count();
     if unread > 0 {

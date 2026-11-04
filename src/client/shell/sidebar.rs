@@ -225,9 +225,7 @@ pub(crate) fn render_sidebar(
         workspace_area.y,
         workspace_area.width,
         " spaces",
-        Style::default()
-            .fg(palette.overlay0)
-            .add_modifier(Modifier::BOLD),
+        super::section_header_style(palette),
     );
 
     let entries = workspace_entries(snapshot, state.collapsed_groups);
