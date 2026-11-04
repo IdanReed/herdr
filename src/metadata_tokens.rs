@@ -13,6 +13,16 @@ pub(crate) struct MetadataTokens {
 }
 
 pub(crate) const MAX_SEQUENCE_SOURCES: usize = 32;
+pub(crate) const MAX_TOKEN_KEY_LEN: usize = 32;
+
+/// Token keys are short ASCII identifiers shared by API reports and config.
+pub(crate) fn is_valid_token_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= MAX_TOKEN_KEY_LEN
+        && key
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'))
+}
 
 pub(crate) fn sequence_is_fresh(
     sequences: &HashMap<String, u64>,
@@ -88,6 +98,10 @@ impl MetadataTokens {
             .collect()
     }
 
+    pub(crate) fn get(&self, key: &str) -> Option<&str> {
+        self.entries.get(key).map(|token| token.value.as_str())
+    }
+
     pub(crate) fn next_expiry(&self) -> Option<Instant> {
         self.entries
             .values()
@@ -112,6 +126,25 @@ mod tests {
             .iter()
             .map(|(key, value)| ((*key).into(), value.map(str::to_string)))
             .collect()
+    }
+
+    #[test]
+    fn token_keys_are_short_ascii_identifiers() {
+        assert!(is_valid_token_key("status"));
+        assert!(is_valid_token_key("build_state-2"));
+        assert!(is_valid_token_key(&"k".repeat(MAX_TOKEN_KEY_LEN)));
+        assert!(!is_valid_token_key(""));
+        assert!(!is_valid_token_key("has space"));
+        assert!(!is_valid_token_key("dotted.key"));
+        assert!(!is_valid_token_key(&"k".repeat(MAX_TOKEN_KEY_LEN + 1)));
+    }
+
+    #[test]
+    fn get_reads_one_value_without_collecting() {
+        let mut tokens = MetadataTokens::default();
+        tokens.patch(patch(&[("summary", Some("one"))]), None, Instant::now());
+        assert_eq!(tokens.get("summary"), Some("one"));
+        assert_eq!(tokens.get("missing"), None);
     }
 
     #[test]

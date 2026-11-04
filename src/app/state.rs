@@ -784,6 +784,8 @@ pub(crate) struct PaneFocusTarget {
 pub enum TabBarStatusSegment {
     Zoom,
     Text(Option<String>),
+    /// Metadata token key resolved against each client's focused workspace.
+    WorkspaceToken(String),
 }
 
 pub struct AppState {

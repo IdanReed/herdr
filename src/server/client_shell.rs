@@ -198,6 +198,9 @@ pub(super) fn snapshot_with_completions(
                 .get(tab_index)
         })
         .is_some_and(|tab| tab.zoomed);
+    let focused_workspace_index = focused_workspace_id
+        .as_deref()
+        .and_then(|workspace_id| app.parse_workspace_id(workspace_id));
     let tab_bar_right = app
         .state
         .tab_bar_right
@@ -215,6 +218,12 @@ pub(super) fn snapshot_with_completions(
                     accent: false,
                 })
             }
+            crate::app::state::TabBarStatusSegment::WorkspaceToken(key) => focused_workspace_index
+                .and_then(|index| app.tab_bar_workspace_token_text(index, key))
+                .map(|text| protocol::ClientShellTabStatusSegment {
+                    text,
+                    accent: false,
+                }),
             crate::app::state::TabBarStatusSegment::Zoom
             | crate::app::state::TabBarStatusSegment::Text(_) => None,
         })
@@ -750,6 +759,77 @@ mod tests {
                 notes.preview
             )),
             Some(("0.8.3", "### Changed\n- Client shell", true))
+        );
+    }
+
+    #[test]
+    fn workspace_token_status_follows_each_clients_focused_workspace() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = crate::app::App::new(
+            &crate::config::Config::default(),
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        app.state.workspaces = vec![
+            crate::workspace::Workspace::test_new("first"),
+            crate::workspace::Workspace::test_new("second"),
+        ];
+        app.state.active = Some(0);
+        app.state.ensure_test_terminals();
+        app.state.tab_bar_right = vec![
+            crate::app::state::TabBarStatusSegment::Text(Some("left".into())),
+            crate::app::state::TabBarStatusSegment::WorkspaceToken("status".into()),
+        ];
+        app.state.workspaces[1].metadata_tokens.patch(
+            std::collections::HashMap::from([("status".to_string(), Some("second ready".into()))]),
+            None,
+            std::time::Instant::now(),
+        );
+        let texts = |snapshot: protocol::ClientShellSnapshot| {
+            snapshot
+                .tab_bar_right
+                .into_iter()
+                .map(|segment| (segment.text, segment.accent))
+                .collect::<Vec<_>>()
+        };
+
+        // The session focus is the first workspace, which has no token.
+        assert_eq!(
+            texts(snapshot(&app, "boot", 1, None, None)),
+            vec![("left".to_string(), false)]
+        );
+
+        let second = crate::server::clients::ClientShellLocation {
+            focused_workspace_id: Some(app.public_workspace_id(1)),
+            active_tab_ids: std::collections::HashMap::new(),
+        };
+        assert_eq!(
+            texts(snapshot(&app, "boot", 2, None, Some(&second))),
+            vec![
+                ("left".to_string(), false),
+                ("second ready".to_string(), false)
+            ]
+        );
+
+        app.state.workspaces[1].metadata_tokens.patch(
+            std::collections::HashMap::from([("status".to_string(), None)]),
+            None,
+            std::time::Instant::now(),
+        );
+        assert_eq!(
+            texts(snapshot(&app, "boot", 3, None, Some(&second))),
+            vec![("left".to_string(), false)]
+        );
+
+        let missing = crate::server::clients::ClientShellLocation {
+            focused_workspace_id: Some("w-missing".into()),
+            active_tab_ids: std::collections::HashMap::new(),
+        };
+        assert_eq!(
+            texts(snapshot(&app, "boot", 4, None, Some(&missing))),
+            vec![("left".to_string(), false)]
         );
     }
 

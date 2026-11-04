@@ -325,6 +325,7 @@ tab_bar_right = [
   { type = "datetime", format = "%H:%M" },
   { type = "text", text = "prod" },
   { type = "command", command = "~/.config/herdr/status.sh", interval_seconds = 5, timeout_seconds = 2 },
+  { type = "workspace_token", key = "status" },
 ]
 tab_bar_right_separator = " · "
 ```
@@ -332,6 +333,8 @@ tab_bar_right_separator = " · "
 The status area is empty by default. Add `zoom` to show a fixed `ZOOM` pill while the active tab is zoomed; the existing per-tab `Z` markers remain independent. `hostname`, `datetime`, and `command` resolve on the Herdr server, so `herdr --remote` shows the remote machine's values. Datetime entries use `strftime` formatting; directives that require a UTC offset or Unix timestamp, such as `%z` and `%s`, are rejected because the value is server-local wall-clock time.
 
 Command entries run immediately and then at `interval_seconds` without blocking rendering or overlapping a previous run. The interval can be 1–31,536,000 seconds and the timeout can be 1–3,600 seconds. Herdr uses the last line of successful output, removes ESC-prefixed terminal control sequences instead of interpreting styles, clears the entry after failure, empty output, or `timeout_seconds`, and provides the same active workspace, tab, pane, socket, binary, and working-directory context as custom command keybindings. Commands are supported on Linux, macOS, and Windows, using `/bin/sh -lc` on Linux and macOS and `cmd.exe /d /c` on Windows.
+
+A `workspace_token` entry shows one metadata token of the workspace focused in that client, so each attached client follows its own focus. Scripts and plugins set the value with `herdr workspace report-metadata <workspace_id> --source <name> --token <key>=<value>`, and the entry updates as soon as the token or the focused workspace changes, without polling. The entry is hidden while the focused workspace has no value for `key`. Keys use the metadata token rules: 1–32 ASCII letters, digits, `_`, or `-`. Values follow the same sanitizing and 80-character limit as command output.
 
 Separators appear only between visible entries. Set `tab_bar_right_separator = ""` for direct concatenation. On a narrow tab row, the complete status area yields to the tabs and their controls.
 

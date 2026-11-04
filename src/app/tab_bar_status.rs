@@ -88,6 +88,14 @@ impl App {
                         .tab_bar_right
                         .push(TabBarStatusSegment::Text(sanitize_literal_text(text)));
                 }
+                TabBarRightEntryConfig::WorkspaceToken { key } => {
+                    if !crate::metadata_tokens::is_valid_token_key(key) {
+                        continue;
+                    }
+                    self.state
+                        .tab_bar_right
+                        .push(TabBarStatusSegment::WorkspaceToken(key.clone()));
+                }
                 TabBarRightEntryConfig::Command {
                     command,
                     interval_seconds,
@@ -168,6 +176,20 @@ impl App {
         }
 
         changed
+    }
+
+    /// Resolves a `workspace_token` status entry for one client's focused workspace.
+    pub(crate) fn tab_bar_workspace_token_text(
+        &self,
+        workspace_index: usize,
+        key: &str,
+    ) -> Option<String> {
+        self.state
+            .workspaces
+            .get(workspace_index)?
+            .metadata_tokens
+            .get(key)
+            .and_then(sanitize_status_text)
     }
 
     pub(crate) fn next_tab_bar_status_deadline(&self) -> Option<std::time::Instant> {
@@ -737,6 +759,53 @@ mod tests {
 
         assert!(app.tab_bar_commands[0].task.is_some());
         assert_eq!(app.next_tab_bar_status_deadline(), None);
+    }
+
+    #[test]
+    fn workspace_token_entries_keep_valid_keys_only() {
+        let mut app = test_app();
+        app.configure_tab_bar_status(
+            &[
+                TabBarRightEntryConfig::WorkspaceToken {
+                    key: "status".into(),
+                },
+                TabBarRightEntryConfig::WorkspaceToken {
+                    key: "not valid".into(),
+                },
+            ],
+            " ",
+        );
+
+        assert_eq!(
+            app.state.tab_bar_right,
+            vec![TabBarStatusSegment::WorkspaceToken("status".into())]
+        );
+        assert_eq!(app.next_tab_bar_status_deadline(), None);
+    }
+
+    #[test]
+    fn workspace_token_text_reads_one_workspace_and_sanitizes() {
+        let mut app = test_app();
+        app.state.workspaces = vec![
+            crate::workspace::Workspace::test_new("first"),
+            crate::workspace::Workspace::test_new("second"),
+        ];
+        app.state.workspaces[1].metadata_tokens.patch(
+            std::collections::HashMap::from([(
+                "status".to_string(),
+                Some(format!("ready\u{202e}{}", "x".repeat(100))),
+            )]),
+            None,
+            std::time::Instant::now(),
+        );
+
+        assert_eq!(app.tab_bar_workspace_token_text(0, "status"), None);
+        assert_eq!(
+            app.tab_bar_workspace_token_text(1, "status"),
+            Some(format!("ready{}", "x".repeat(75)))
+        );
+        assert_eq!(app.tab_bar_workspace_token_text(1, "missing"), None);
+        assert_eq!(app.tab_bar_workspace_token_text(9, "status"), None);
     }
 
     #[test]

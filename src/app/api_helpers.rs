@@ -204,7 +204,8 @@ pub(super) const METADATA_SOURCE_MAX_CHARS: usize = 80;
 const METADATA_TTL_MIN_MS: u64 = 1;
 const MAX_METADATA_TOKEN_KEYS_PER_REQUEST: usize = 16;
 pub(super) const MAX_METADATA_TOKEN_KEYS_PER_RESOURCE: usize = 32;
-const MAX_METADATA_TOKEN_KEY_LEN: usize = 32;
+#[cfg(test)]
+const MAX_METADATA_TOKEN_KEY_LEN: usize = crate::metadata_tokens::MAX_TOKEN_KEY_LEN;
 const MAX_METADATA_TOKEN_VALUE_LEN: usize = 80;
 
 pub(super) fn normalize_metadata_source(value: String) -> Result<String, &'static str> {
@@ -256,12 +257,7 @@ pub(super) fn normalize_metadata_tokens(
     tokens
         .into_iter()
         .map(|(key, value)| {
-            if key.is_empty()
-                || key.len() > MAX_METADATA_TOKEN_KEY_LEN
-                || !key
-                    .chars()
-                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-'))
-            {
+            if !crate::metadata_tokens::is_valid_token_key(&key) {
                 return Err(format!("invalid metadata token key: {key}"));
             }
             let value = value.and_then(|value| {

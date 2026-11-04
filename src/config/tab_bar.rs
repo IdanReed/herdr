@@ -37,6 +37,10 @@ pub enum TabBarRightEntryConfig {
         #[serde(default = "default_command_timeout_seconds")]
         timeout_seconds: u64,
     },
+    /// Shows one metadata token of the viewing client's focused workspace.
+    WorkspaceToken {
+        key: String,
+    },
 }
 
 pub(crate) fn parse_tab_bar_datetime_format(
@@ -103,6 +107,14 @@ pub(crate) fn tab_bar_right_diagnostics(entries: &[TabBarRightEntryConfig]) -> V
                     ));
                 }
             }
+            TabBarRightEntryConfig::WorkspaceToken { key } => {
+                if !crate::metadata_tokens::is_valid_token_key(key) {
+                    diagnostics.push(format!(
+                        "ui.tab_bar_right[{index}] workspace_token key must be 1-{} ASCII letters, digits, '_' or '-'; hiding entry",
+                        crate::metadata_tokens::MAX_TOKEN_KEY_LEN
+                    ));
+                }
+            }
             TabBarRightEntryConfig::Zoom
             | TabBarRightEntryConfig::Hostname
             | TabBarRightEntryConfig::Text { .. } => {}
@@ -131,12 +143,19 @@ entries = [
   { type = "datetime", format = "%H:%M" },
   { type = "text", text = "prod" },
   { type = "command", command = "status.sh" },
+  { type = "workspace_token", key = "status" },
 ]
 "#,
         )
         .expect("parse tab bar entries");
 
-        assert_eq!(parsed.entries.len(), 5);
+        assert_eq!(parsed.entries.len(), 6);
+        assert_eq!(
+            parsed.entries[5],
+            TabBarRightEntryConfig::WorkspaceToken {
+                key: "status".into()
+            }
+        );
         assert!(matches!(
             &parsed.entries[4],
             TabBarRightEntryConfig::Command {
@@ -177,5 +196,37 @@ entries = [
         assert!(diagnostics.contains("timeout_seconds must be at least 1"));
         assert!(diagnostics.contains("timeout_seconds may be at most"));
         assert!(parse_tab_bar_datetime_format("").is_err());
+    }
+
+    #[test]
+    fn workspace_token_entry_requires_a_key() {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            #[allow(dead_code)] // Only the parse result matters.
+            entries: Vec<TabBarRightEntryConfig>,
+        }
+
+        assert!(toml::from_str::<Wrapper>(r#"entries = [{ type = "workspace_token" }]"#).is_err());
+    }
+
+    #[test]
+    fn diagnostics_reject_invalid_workspace_token_keys() {
+        let invalid = ["", "has space", "dotted.key", &"k".repeat(33)];
+        for key in invalid {
+            let diagnostics =
+                tab_bar_right_diagnostics(&[TabBarRightEntryConfig::WorkspaceToken {
+                    key: key.to_string(),
+                }]);
+            assert_eq!(diagnostics.len(), 1, "key {key:?}");
+            assert!(diagnostics[0].contains("workspace_token key"));
+            assert!(diagnostics[0].ends_with("hiding entry"));
+        }
+
+        assert!(
+            tab_bar_right_diagnostics(&[TabBarRightEntryConfig::WorkspaceToken {
+                key: "build-state_1".into(),
+            }])
+            .is_empty()
+        );
     }
 }
