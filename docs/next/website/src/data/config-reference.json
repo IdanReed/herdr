@@ -845,13 +845,13 @@
           "key": "keys.pane_mode",
           "type": "keybinding",
           "default": "\"ctrl+p\"",
-          "description": "Enter pane mode: h/j/k/l or arrows move focus, Shift moves the pane, d/v split down/right, r renames, and x closes the focused pane. Set to \"\" to send the key to the pane."
+          "description": "Enter pane mode: h/j/k/l or arrows move focus, Shift moves the pane, d/r split down/right, and x closes the focused pane. Set to \"\" to send the key to the pane."
         },
         {
           "key": "keys.tab_mode",
           "type": "keybinding",
           "default": "\"ctrl+t\"",
-          "description": "Enter tab mode: h/j/k/l or arrows move focus between tabs, Shift moves the tab. Set to \"\" to send the key to the pane."
+          "description": "Enter tab mode: h/j/k/l or arrows move focus between tabs, Shift moves the tab, and r renames the focused tab. Set to \"\" to send the key to the pane."
         },
         {
           "key": "keys.workspace_mode",

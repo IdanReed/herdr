@@ -81,12 +81,16 @@ impl ScopeMode {
                 ("hjkl ←↓↑→", "focus"),
                 ("HJKL", "move"),
                 ("d", "split down"),
-                ("v", "split right"),
-                ("r", "rename"),
+                ("r", "split right"),
                 ("x", "close"),
                 ("esc", "done"),
             ],
-            Self::Tab => &[("h/l ←/→", "focus"), ("H/L", "move"), ("esc", "done")],
+            Self::Tab => &[
+                ("h/l ←/→", "focus"),
+                ("H/L", "move"),
+                ("r", "rename"),
+                ("esc", "done"),
+            ],
             Self::Workspace => &[
                 ("j/k ↑/↓", "focus"),
                 ("J/K", "move"),
@@ -132,9 +136,9 @@ impl ScopeMode {
         let plain = |character| plain_key(key, character);
         match self {
             Self::Pane if plain('d') => Some((KeybindAction::SplitHorizontal, true)),
-            Self::Pane if plain('v') => Some((KeybindAction::SplitVertical, true)),
-            Self::Pane if plain('r') => Some((KeybindAction::RenamePane, false)),
+            Self::Pane if plain('r') => Some((KeybindAction::SplitVertical, true)),
             Self::Pane if plain('x') => Some((KeybindAction::ClosePane, false)),
+            Self::Tab if plain('r') => Some((KeybindAction::RenameTab, false)),
             Self::Workspace if plain('n') => Some((KeybindAction::NewWorkspace, true)),
             Self::Workspace if plain('r') => Some((KeybindAction::RenameWorkspace, false)),
             Self::Workspace if plain('x') => Some((KeybindAction::CloseWorkspace, false)),

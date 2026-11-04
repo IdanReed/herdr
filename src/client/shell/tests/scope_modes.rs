@@ -199,7 +199,7 @@ fn pane_mode_moves_focus_and_panes_and_closes_after_a_split() {
     assert_eq!(state.mode, ClientShellMode::Terminal);
 
     state.handle_input_bytes(&[CTRL_P]);
-    let right = state.handle_input_bytes(b"v");
+    let right = state.handle_input_bytes(b"r");
     assert!(matches!(
         method(&right),
         Method::PaneSplit(params) if params.direction == SplitDirection::Right && params.focus
@@ -208,24 +208,14 @@ fn pane_mode_moves_focus_and_panes_and_closes_after_a_split() {
 }
 
 #[test]
-fn pane_mode_renames_and_closes_the_focused_pane_and_stays_open() {
+fn pane_mode_closes_the_focused_pane_and_stays_open() {
     // Two panes in one tab, so closing one needs no confirmation.
     let mut state = shell(snapshot_with_agents());
     state.handle_input_bytes(&[CTRL_P]);
 
-    let rename = state.handle_input_bytes(b"r");
-    assert!(rename.actions.is_empty() && rename.requests.is_empty());
-    assert!(matches!(
-        state.overlay.as_ref(),
-        Some(ClientShellOverlay::Rename(ClientRenameOverlay {
-            target: ClientRenameTarget::Pane { pane_id },
-            ..
-        })) if pane_id == "pane_1"
-    ));
-    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Pane));
-    // The dialog owns the keys until it closes, then the mode is still open.
-    state.handle_input_bytes(b"x");
-    state.handle_input_bytes(b"\x1b");
+    // Panes have no rename key, and v is not a split key.
+    let ignored = state.handle_input_bytes(b"v");
+    assert!(ignored.actions.is_empty() && ignored.requests.is_empty());
     assert!(state.overlay.is_none());
     assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Pane));
 
@@ -343,6 +333,35 @@ fn tab_mode_moves_focus_and_reorders_the_focused_tab() {
 }
 
 #[test]
+fn tab_mode_renames_the_focused_tab_and_stays_open() {
+    let mut state = shell(snapshot_with_tabs());
+    state.handle_input_bytes(&[CTRL_T]);
+
+    let rename = state.handle_input_bytes(b"r");
+    assert!(rename.actions.is_empty() && rename.requests.is_empty());
+    assert!(matches!(
+        state.overlay.as_ref(),
+        Some(ClientShellOverlay::Rename(ClientRenameOverlay {
+            target: ClientRenameTarget::Tab { tab_id, .. },
+            ..
+        })) if tab_id == "tab_2"
+    ));
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Tab));
+    // The dialog owns the keys until it closes, then the mode is still open.
+    let saved = state.handle_input_bytes(b"\x15renamed\r");
+    assert!(
+        matches!(
+            method(&saved),
+            Method::TabRename(params) if params.tab_id == "tab_2" && params.label == "renamed"
+        ),
+        "{:?}",
+        saved.actions
+    );
+    assert!(state.overlay.is_none());
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Tab));
+}
+
+#[test]
 fn spaces_mode_moves_focus_reorders_and_creates_workspaces() {
     let mut state = shell(snapshot_with_workspaces());
     state.handle_input_bytes(&[CTRL_S]);
@@ -419,13 +438,15 @@ fn mode_bar_shows_each_modes_hotkeys() {
                 "hjkl ←↓↑→ focus",
                 "HJKL move",
                 "d split down",
-                "v split right",
-                "r rename",
+                "r split right",
                 "x close",
                 "esc done",
             ][..],
         ),
-        (CTRL_T, &["TAB", "h/l ←/→ focus", "H/L move", "esc done"]),
+        (
+            CTRL_T,
+            &["TAB", "h/l ←/→ focus", "H/L move", "r rename", "esc done"],
+        ),
         (
             CTRL_S,
             &[

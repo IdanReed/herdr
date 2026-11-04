@@ -457,7 +457,7 @@ pub struct KeysConfig {
     pub toggle_sidebar: BindingConfig,
     /// Enter pane mode: move focus, move panes, and split. Default: "ctrl+p"
     pub pane_mode: BindingConfig,
-    /// Enter tab mode: move focus between tabs and reorder them. Default: "ctrl+t"
+    /// Enter tab mode: move focus between tabs, reorder, and rename them. Default: "ctrl+t"
     pub tab_mode: BindingConfig,
     /// Enter spaces mode: move focus between workspaces, reorder, and create them. Default: "ctrl+s"
     pub workspace_mode: BindingConfig,
