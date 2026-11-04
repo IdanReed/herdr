@@ -33,12 +33,10 @@ pub(super) enum AgentListItem<T> {
     Agent(T),
 }
 
-/// Whether agents appear under a heading for their space. Headings follow the
-/// spaces order, so a priority sort or a custom agent view shows a flat list.
-pub(super) fn groups_by_space(config: &ClientShellConfig, agent_view_label: Option<&str>) -> bool {
-    config.agents.group_by_space
-        && config.agent_panel_sort == crate::config::AgentPanelSortConfig::Spaces
-        && agent_view_label.is_none()
+/// Whether agents appear under a heading for their space. A custom agent view
+/// sets its own order, which can mix spaces, so it shows a flat list.
+pub(super) fn groups_by_space(agent_view_label: Option<&str>) -> bool {
+    agent_view_label.is_none()
 }
 
 /// Adds a heading wherever the space changes. `space` gives the key that
@@ -111,10 +109,9 @@ pub(super) fn agent_list_heights<T>(
     (heights, gaps)
 }
 
-pub(super) fn ordered_agent_pane_ids(
-    snapshot: &ClientShellSnapshot,
-    sort: crate::config::AgentPanelSortConfig,
-) -> Vec<String> {
+/// Agents in panel order: by space in the spaces order, then by attention
+/// inside each space. A custom agent view keeps the order it defines.
+pub(super) fn ordered_agent_pane_ids(snapshot: &ClientShellSnapshot) -> Vec<String> {
     if snapshot.agent_view_label.is_some() {
         return snapshot
             .agent_order
@@ -128,15 +125,23 @@ pub(super) fn ordered_agent_pane_ids(
             .cloned()
             .collect();
     }
+    let workspace_order = snapshot
+        .workspaces
+        .iter()
+        .enumerate()
+        .map(|(index, workspace)| (workspace.workspace_id.as_str(), index))
+        .collect::<HashMap<_, _>>();
     let mut agents = snapshot.agents.iter().collect::<Vec<_>>();
-    if sort == crate::config::AgentPanelSortConfig::Priority {
-        agents.sort_by_key(|agent| {
-            (
-                std::cmp::Reverse(status_priority(agent.agent_status)),
-                std::cmp::Reverse(agent.state_change_seq),
-            )
-        });
-    }
+    agents.sort_by_key(|agent| {
+        (
+            workspace_order
+                .get(agent.workspace_id.as_str())
+                .copied()
+                .unwrap_or(usize::MAX),
+            std::cmp::Reverse(status_priority(agent.agent_status)),
+            std::cmp::Reverse(agent.state_change_seq),
+        )
+    });
     agents
         .into_iter()
         .map(|agent| agent.pane_id.clone())
@@ -151,13 +156,7 @@ pub(super) fn render_agent_panel(
     agent_scroll: &mut usize,
     hits: &mut ShellHitMap,
 ) {
-    if !render_agent_panel_header(
-        buffer,
-        area,
-        snapshot.agent_view_label.as_deref(),
-        config,
-        hits,
-    ) {
+    if !render_agent_panel_header(buffer, area, snapshot.agent_view_label.as_deref(), config) {
         return;
     }
 
@@ -186,7 +185,6 @@ pub(super) fn render_agent_panel_header(
     area: Rect,
     agent_view_label: Option<&str>,
     config: &ClientShellConfig,
-    hits: &mut ShellHitMap,
 ) -> bool {
     if area.height == 0 {
         return false;
@@ -212,36 +210,19 @@ pub(super) fn render_agent_panel_header(
             .fg(config.palette.overlay0)
             .add_modifier(Modifier::BOLD),
     );
-    let sort_label = agent_view_label.unwrap_or(match config.agent_panel_sort {
-        crate::config::AgentPanelSortConfig::Spaces => "grouped",
-        crate::config::AgentPanelSortConfig::Priority => "priority",
-    });
-    let sort_width = display_width(sort_label).min(area.width as usize) as u16;
-    let sort_rect = Rect::new(
-        area.right().saturating_sub(sort_width),
-        area.y + 1,
-        sort_width,
-        1,
-    );
-    hits.agent_sort_toggle = if config.mouse_capture && agent_view_label.is_none() {
-        sort_rect
-    } else {
-        Rect::default()
-    };
-    put_text(
-        buffer,
-        sort_rect.x,
-        sort_rect.y,
-        sort_rect.width,
-        sort_label,
-        Style::default()
-            .fg(if agent_view_label.is_some() {
-                config.palette.accent
-            } else {
-                config.palette.overlay0
-            })
-            .add_modifier(Modifier::BOLD),
-    );
+    if let Some(view_label) = agent_view_label {
+        let width = display_width(view_label).min(area.width as usize) as u16;
+        put_text(
+            buffer,
+            area.right().saturating_sub(width),
+            area.y + 1,
+            width,
+            view_label,
+            Style::default()
+                .fg(config.palette.accent)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
     true
 }
 
@@ -317,8 +298,8 @@ pub(super) fn agent_list_items(
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
 ) -> Vec<AgentListItem<AgentRow>> {
-    let grouped = groups_by_space(config, snapshot.agent_view_label.as_deref());
-    let rows = ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
+    let grouped = groups_by_space(snapshot.agent_view_label.as_deref());
+    let rows = ordered_agent_pane_ids(snapshot)
         .into_iter()
         .filter_map(|pane_id| agent_row(snapshot, &pane_id, config, None, grouped))
         .collect::<Vec<_>>();

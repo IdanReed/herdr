@@ -430,8 +430,10 @@ pub struct AgentsSidebarConfig {
     #[serde(default, deserialize_with = "deserialize_rows_by_agent")]
     pub rows_by_agent: BTreeMap<String, AgentSidebarRows>,
     pub row_gap: u16,
-    /// Show a heading for each space above its agents while the panel sorts by spaces.
-    pub group_by_space: bool,
+    /// Retired. Agents always appear under a heading for their space. Parsed so
+    /// older configs still load, then ignored.
+    #[serde(rename = "group_by_space", skip_serializing)]
+    pub _retired_group_by_space: bool,
 }
 
 const DEFAULT_AGENT_ROWS: [&[AgentSidebarToken]; 2] = [
@@ -484,7 +486,7 @@ impl Default for AgentsSidebarConfig {
             rows: DEFAULT_AGENT_ROWS.iter().map(|row| row.to_vec()).collect(),
             rows_by_agent: BTreeMap::new(),
             row_gap: DEFAULT_SIDEBAR_ROW_GAP,
-            group_by_space: false,
+            _retired_group_by_space: false,
         }
     }
 }
@@ -545,11 +547,13 @@ mod tests {
         );
         assert!(config.agents.rows_by_agent.is_empty());
         assert_eq!(config.agents.row_gap, 0);
-        assert!(!config.agents.group_by_space);
+        // The retired grouping switch still parses, without a diagnostic, and is not written back.
         let grouped: crate::config::Config =
             toml::from_str("[ui.sidebar.agents]\ngroup_by_space = true\n").expect("grouped");
-        assert!(grouped.ui.sidebar.agents.group_by_space);
         assert!(grouped.collect_diagnostics().is_empty());
+        assert!(!toml::to_string(&grouped.ui.sidebar)
+            .unwrap()
+            .contains("group_by_space"));
         assert_eq!(
             config.spaces.rows,
             vec![

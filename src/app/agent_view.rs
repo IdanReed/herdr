@@ -67,20 +67,17 @@ pub(crate) fn apply_agent_view(app: &AppState, entries: &mut Vec<AgentPanelEntry
         }
     }
 
-    if matches!(
-        app.agent_panel_sort,
-        crate::app::state::AgentPanelSort::Priority
-    ) {
-        entries.sort_by_key(|entry| {
-            (
-                std::cmp::Reverse(super::api_helpers::tab_attention_priority(
-                    entry.state,
-                    entry.seen,
-                )),
-                std::cmp::Reverse(entry.last_agent_state_change_seq),
-            )
-        });
-    }
+    // Agents keep their space order and sort by attention inside each space.
+    entries.sort_by_key(|entry| {
+        (
+            entry.ws_idx,
+            std::cmp::Reverse(super::api_helpers::tab_attention_priority(
+                entry.state,
+                entry.seen,
+            )),
+            std::cmp::Reverse(entry.last_agent_state_change_seq),
+        )
+    });
 }
 
 pub(crate) fn presented_workspace_idx(app: &AppState) -> Option<usize> {

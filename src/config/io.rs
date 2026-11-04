@@ -1005,22 +1005,21 @@ claude = [["terminal_title"]]
     }
 
     #[test]
-    fn load_live_config_accepts_legacy_agent_panel_scope_without_warning() {
+    fn load_live_config_accepts_retired_agent_panel_keys_without_warning() {
         let loaded = load_live_config_from_str(
             r#"
 [ui]
 agent_panel_scope = "current"
 agent_panel_sort = "priority"
+
+[ui.sidebar.agents]
+group_by_space = true
 "#,
         )
         .unwrap();
 
         assert!(loaded.diagnostics.is_empty());
         assert!(loaded.invalid_sections.is_empty());
-        assert_eq!(
-            loaded.config.ui.agent_panel_sort,
-            super::super::AgentPanelSortConfig::Priority
-        );
     }
 
     #[test]

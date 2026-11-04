@@ -1075,7 +1075,7 @@
           "key": "ui.agent_panel_sort",
           "type": "enum",
           "default": "\"spaces\"",
-          "description": "Agent sidebar ordering. Saved values are \"spaces\" or \"priority\"; \"workspaces\" is accepted as an alias for \"spaces\".",
+          "description": "Retired and ignored. The Agent panel always lists agents under their space, in the Spaces order, and by attention inside each space. Older configs with \"spaces\", \"priority\", or the \"workspaces\" alias still load.",
           "values": [
             "spaces",
             "priority"
@@ -1095,7 +1095,7 @@
           "key": "ui.sidebar.agents.group_by_space",
           "type": "boolean",
           "default": "false",
-          "description": "Show a heading for each space above its agents while the Agent panel uses the grouped (spaces) order. Agent rows under a heading leave out the workspace and machine tokens, and the default layout becomes one line per agent that names its tab, or says unnamed when the tab has no custom name. Every heading after the first has one blank row above it, in addition to row_gap."
+          "description": "Retired and ignored. Agents always appear under a heading for their space; older configs that set this key still load."
         },
         {
           "key": "ui.sidebar.agents.row_gap",

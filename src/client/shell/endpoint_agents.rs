@@ -52,13 +52,7 @@ pub(super) fn render_expanded(
     agent_scroll: &mut usize,
     hits: &mut ShellHitMap,
 ) {
-    if !super::agent_sidebar::render_agent_panel_header(
-        buffer,
-        area,
-        agent_view_label,
-        config,
-        hits,
-    ) {
+    if !super::agent_sidebar::render_agent_panel_header(buffer, area, agent_view_label, config) {
         return;
     }
     let rows = agent_list_items(endpoints, active_endpoint_id, config, agent_view_label);
@@ -139,7 +133,7 @@ fn agent_list_items(
     config: &ClientShellConfig,
     agent_view_label: Option<&str>,
 ) -> Vec<super::agent_sidebar::AgentListItem<EndpointAgentRow>> {
-    let grouped = super::agent_sidebar::groups_by_space(config, agent_view_label);
+    let grouped = super::agent_sidebar::groups_by_space(agent_view_label);
     let rows = agent_rows(endpoints, active_endpoint_id, config, grouped);
     if !grouped {
         return rows
@@ -191,22 +185,18 @@ fn agent_rows(
         .flatten()
         .collect::<HashMap<_, _>>();
 
-    super::aggregate_navigation::aggregate_agent_rows(
-        endpoints,
-        active_endpoint_id,
-        config.agent_panel_sort,
-    )
-    .into_iter()
-    .filter_map(|row| {
-        let key = (row.endpoint.endpoint_id.clone(), row.agent.pane_id.clone());
-        let mut agent = rendered_rows.remove(&key)?;
-        agent.focused &= row.endpoint.endpoint_id == active_endpoint_id;
-        Some(EndpointAgentRow {
-            endpoint_id: row.endpoint.endpoint_id.clone(),
-            machine_label: row.endpoint.label.to_owned(),
-            stale: row.endpoint.stale(),
-            agent,
+    super::aggregate_navigation::aggregate_agent_rows(endpoints, active_endpoint_id)
+        .into_iter()
+        .filter_map(|row| {
+            let key = (row.endpoint.endpoint_id.clone(), row.agent.pane_id.clone());
+            let mut agent = rendered_rows.remove(&key)?;
+            agent.focused &= row.endpoint.endpoint_id == active_endpoint_id;
+            Some(EndpointAgentRow {
+                endpoint_id: row.endpoint.endpoint_id.clone(),
+                machine_label: row.endpoint.label.to_owned(),
+                stale: row.endpoint.stale(),
+                agent,
+            })
         })
-    })
-    .collect()
+        .collect()
 }

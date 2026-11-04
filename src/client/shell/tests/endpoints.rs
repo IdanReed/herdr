@@ -538,6 +538,8 @@ fn sidebar_toggle_remains_clickable_with_overflowing_agents() {
             let (mut state, _) = state_with_scrollable_agents();
             if !saved_machine {
                 state.set_endpoint_catalog(&[]);
+                // One machine's agents take one line each, so space them out to overflow.
+                state.config.agents.row_gap = 1;
             }
             state.agent_scroll = if scroll_to_bottom { usize::MAX } else { 0 };
             let frame = state.compose(100, 28).expect("overflowing agent panel");
@@ -643,6 +645,11 @@ fn agent_navigation_reveals_target_using_destination_sort() {
         }
         if endpoint_id == remote {
             projection.agent_view_label = Some("recent".into());
+            // The source order puts the idle pane_8 last in its space, the
+            // destination sort puts it first.
+            for agent in &mut projection.agents[..7] {
+                agent.agent_status = AgentStatus::Working;
+            }
         }
         state.set_endpoint_snapshot(&endpoint_id, projection);
     }
@@ -710,7 +717,6 @@ fn agent_navigation_keeps_scroll_when_target_is_visible() {
     let targets = super::super::aggregate_navigation::online_agent_targets(
         &state.endpoints,
         &state.active_endpoint_id,
-        state.config.agent_panel_sort,
     );
     let index = targets
         .iter()
@@ -1442,9 +1448,7 @@ fn active_workspace_is_the_only_highlight_when_machine_is_expanded() {
 fn aggregate_agents_group_under_machine_and_space_headings() {
     use crate::api::schema::AgentStatus;
 
-    let mut config = Config::default();
-    config.ui.sidebar.agents.group_by_space = true;
-    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     let profile = remote_profile();
     let endpoint_id = ClientEndpointId::Ssh(profile.id.clone());
     state.set_endpoint_catalog(&[profile]);
@@ -1536,22 +1540,12 @@ fn aggregate_agents_use_configured_rows_machine_token_and_status_colors() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("○ Local · local agent"), "frame: {text}");
-    assert!(text.contains("× Build · remote agent"), "frame: {text}");
-    assert!(text.contains("grouped"), "frame: {text}");
-    let toggle = state.hits.agent_sort_toggle;
-    assert!(!toggle.is_empty());
-    let click = state.handle_raw_events(vec![RawInputEvent::Mouse(MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        column: toggle.x,
-        row: toggle.y,
-        modifiers: KeyModifiers::empty(),
-    })]);
-    assert_eq!(
-        state.config.agent_panel_sort,
-        crate::config::AgentPanelSortConfig::Priority
-    );
-    assert!(click.actions.is_empty());
+    // Each row sits under a heading that names its machine, so the machine token drops out.
+    assert!(text.contains(" Local · client-shell ─"), "frame: {text}");
+    assert!(text.contains("○ local agent"), "frame: {text}");
+    assert!(text.contains(" Build · client-shell ─"), "frame: {text}");
+    assert!(text.contains("× remote agent"), "frame: {text}");
+    assert!(!text.contains("grouped"), "frame: {text}");
 
     let buffer = frame
         .to_ratatui_buffer()
@@ -1747,9 +1741,11 @@ fn selected_default_view_ignores_inactive_endpoint_projection() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("Local · local agent"), "frame: {text}");
-    assert!(text.contains("Build · remote agent"), "frame: {text}");
-    assert!(text.contains("grouped"), "frame: {text}");
+    assert!(text.contains(" Local · client-shell ─"), "frame: {text}");
+    assert!(text.contains(" local agent"), "frame: {text}");
+    assert!(text.contains(" Build · client-shell ─"), "frame: {text}");
+    assert!(text.contains(" remote agent"), "frame: {text}");
+    assert!(!text.contains("grouped"), "frame: {text}");
 }
 
 #[test]
@@ -1846,7 +1842,6 @@ fn selected_custom_sort_orders_rendering_and_indexed_navigation() {
     use crate::config::AgentSidebarToken;
 
     let mut config = Config::default();
-    config.ui.agent_panel_sort = crate::config::AgentPanelSortConfig::Priority;
     config.ui.sidebar.agents.rows =
         vec![vec![AgentSidebarToken::Machine, AgentSidebarToken::Agent]];
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
@@ -1960,81 +1955,52 @@ fn selected_position_sort_uses_public_tab_and_pane_numbers() {
     ];
     state.set_test_endpoint_agent_view(&ClientEndpointId::Local, Some(view));
 
-    let names = aggregate_navigation::aggregate_agent_rows(
-        &state.endpoints,
-        &state.active_endpoint_id,
-        crate::config::AgentPanelSortConfig::Priority,
-    )
-    .into_iter()
-    .map(|row| row.agent.name.as_deref().expect("agent name"))
-    .collect::<Vec<_>>();
+    let names =
+        aggregate_navigation::aggregate_agent_rows(&state.endpoints, &state.active_endpoint_id)
+            .into_iter()
+            .map(|row| row.agent.name.as_deref().expect("agent name"))
+            .collect::<Vec<_>>();
     assert_eq!(names, ["pane two", "pane nine", "tab nine"]);
 }
 
 #[test]
-fn aggregate_priority_uses_client_observed_recency_across_machines() {
+fn aggregate_agents_keep_machine_order_and_sort_by_attention_inside_spaces() {
     use crate::api::schema::AgentStatus;
-    use crate::config::AgentSidebarToken;
 
-    let mut config = Config::default();
-    config.ui.agent_panel_sort = crate::config::AgentPanelSortConfig::Priority;
-    config.ui.sidebar.agents.rows =
-        vec![vec![AgentSidebarToken::Machine, AgentSidebarToken::Agent]];
-    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     let profile = remote_profile();
     let endpoint_id = ClientEndpointId::Ssh(profile.id.clone());
     state.set_endpoint_catalog(&[profile]);
     state.set_endpoint_status(&endpoint_id, ClientEndpointStatus::Online);
 
     let mut local = snapshot();
-    local.agents = vec![agent("local agent", AgentStatus::Idle, 1)];
+    let mut second = agent("local working", AgentStatus::Working, 2);
+    second.pane_id = "pane_2".into();
+    second.focused = false;
+    local.agents = vec![agent("local idle", AgentStatus::Idle, 1), second];
     state.set_snapshot(Box::new(local));
     state.set_pane_surface(surface());
     let mut remote = snapshot();
     remote.boot_id = "remote-boot".into();
-    remote.agents = vec![agent("remote agent", AgentStatus::Idle, 1)];
-    state.set_endpoint_snapshot(&endpoint_id, Box::new(remote.clone()));
-
-    let mut local = snapshot();
-    local.agents = vec![agent("local agent", AgentStatus::Idle, 2)];
-    state.set_snapshot(Box::new(local));
-    let frame_text = |state: &mut ClientShellState| {
-        let frame = state.compose(100, 28).expect("combined endpoint frame");
-        frame
-            .cells
-            .chunks(frame.width as usize)
-            .map(|row| {
-                row.iter()
-                    .map(|cell| cell.symbol.as_str())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    let text = frame_text(&mut state);
-    assert!(
-        text.find("Local · local agent").expect("local agent")
-            < text.find("Build · remote agent").expect("remote agent")
-    );
-
-    remote.agents = vec![agent("remote agent", AgentStatus::Working, 2)];
-    state.set_endpoint_snapshot(&endpoint_id, Box::new(remote.clone()));
-    let text = frame_text(&mut state);
-    assert!(
-        text.find("Build · remote agent").expect("remote agent")
-            < text.find("Local · local agent").expect("local agent")
-    );
-
-    remote.agents = vec![agent("remote agent", AgentStatus::Idle, 3)];
+    remote.agents = vec![agent("remote blocked", AgentStatus::Blocked, 3)];
     state.set_endpoint_snapshot(&endpoint_id, Box::new(remote));
-    let text = frame_text(&mut state);
-    assert!(
-        text.find("Build · remote agent").expect("remote agent")
-            < text.find("Local · local agent").expect("local agent")
-    );
+
+    let frame = state.compose(100, 28).expect("combined endpoint frame");
+    let text = frame_rows(&frame).join("\n");
+    let position = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("missing {needle:?} in {text}"))
+    };
+    // A blocked agent on another machine does not jump ahead of this machine's
+    // agents, but attention orders the agents inside one space.
+    assert!(position(" Local · client-shell ─") < position("local working"));
+    assert!(position("local working") < position("local idle"));
+    assert!(position("local idle") < position(" Build · client-shell ─"));
+    assert!(position(" Build · client-shell ─") < position("remote blocked"));
+
     let mut outcome = ClientShellInput::default();
     assert!(
-        state.handle_endpoint_navigation(crate::input::KeybindAction::FocusAgent(0), &mut outcome,)
+        state.handle_endpoint_navigation(crate::input::KeybindAction::FocusAgent(2), &mut outcome,)
     );
     assert!(matches!(
         outcome.actions.as_slice(),
@@ -2480,7 +2446,8 @@ fn disconnected_active_endpoint_freezes_surface_and_marks_cached_ui_stale() {
         Some(ClientEndpointStatus::Reconnecting)
     );
     assert!(text.contains("◐ reconnecting"), "frame: {text}");
-    assert!(text.contains("Build · remote agent"), "frame: {text}");
+    assert!(text.contains(" Build · remote-worksp"), "frame: {text}");
+    assert!(text.contains("× remote agent"), "frame: {text}");
     assert!(
         text.contains("LIVE"),
         "frozen surface should remain: {text}"

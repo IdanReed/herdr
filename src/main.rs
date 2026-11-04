@@ -344,10 +344,6 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Set to "" to leave the outer terminal title alone.
 # window_title = "{hostname}: {workspace}"
 
-# Agent panel ordering: "spaces" (grouped by space) or "priority" (attention queue).
-# "workspaces" is accepted as an alias for "spaces".
-# agent_panel_sort = "spaces"
-
 # Agent status indicators: "dots" preserves the compact color marks; "symbols" uses
 # distinct static glyphs for blocked, working, done, idle, and unknown states.
 # status_indicators = "dots"
@@ -365,9 +361,8 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Blank rows between agent entries. Set to 1 to restore the previous spacing.
 # row_gap = 0
 # rows = [["state_icon", "machine", "workspace", "tab"], ["agent"]]
-# List agents under a heading for each space while agent_panel_sort is "spaces".
-# Rows under a heading drop workspace and machine; the default rows become one line.
-# group_by_space = false
+# Agents appear under a heading for their space. Rows under a heading drop workspace
+# and machine; the default rows become one line: state_icon and session_name.
 # Optional canonical agent IDs replace the default rows for matching agents.
 # [ui.sidebar.agents.rows_by_agent]
 # claude = [["state_icon", "machine", "workspace", "tab"], ["terminal_title_stripped"], ["agent"]]

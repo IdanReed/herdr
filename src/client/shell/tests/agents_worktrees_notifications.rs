@@ -578,7 +578,7 @@ fn pane_cycle_last_and_agent_actions_resolve_to_stable_pane_ids() {
             terminal_title: None,
             terminal_title_stripped: None,
             agent_status: AgentStatus::Idle,
-            state_change_seq: 1,
+            state_change_seq: 2,
             state_labels: Vec::new(),
             tokens: Vec::new(),
             focused: true,
@@ -594,7 +594,7 @@ fn pane_cycle_last_and_agent_actions_resolve_to_stable_pane_ids() {
             terminal_title: None,
             terminal_title_stripped: None,
             agent_status: AgentStatus::Idle,
-            state_change_seq: 2,
+            state_change_seq: 1,
             state_labels: Vec::new(),
             tokens: Vec::new(),
             focused: false,
@@ -691,7 +691,6 @@ fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
         },
     ];
     let mut config = Config::default();
-    config.ui.agent_panel_sort = crate::config::AgentPanelSortConfig::Priority;
     config.ui.status_indicators = crate::config::StatusIndicatorStyle::Symbols;
     config.ui.sidebar.agents.rows = vec![vec![crate::config::AgentSidebarToken::Agent]];
     config.ui.sidebar.agents.rows_by_agent.insert(
@@ -749,7 +748,7 @@ fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
         crate::api::schema::Method::PaneFocus(target) if target.pane_id == "pane_2"
     ));
 
-    state.compose(106, 10).expect("short agent sidebar frame");
+    state.compose(106, 12).expect("short agent sidebar frame");
     assert_eq!(
         state
             .hits
@@ -758,16 +757,19 @@ fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
             .map(|(_, pane_id)| pane_id.as_str()),
         Some("pane_2")
     );
+    // One step scrolls past the space heading, the next past the first agent.
     let body = state.hits.agent_body;
-    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
-        kind: MouseEventKind::ScrollDown,
-        column: body.x,
-        row: body.y,
-        modifiers: KeyModifiers::empty(),
-    })]);
-    state
-        .compose(106, 10)
-        .expect("scrolled agent sidebar frame");
+    for _ in 0..2 {
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: body.x,
+            row: body.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+        state
+            .compose(106, 12)
+            .expect("scrolled agent sidebar frame");
+    }
     assert_eq!(
         state
             .hits
@@ -812,7 +814,13 @@ fn muted_agent_sidebar_rows_do_not_stack_terminal_faint() {
         tokens: Vec::new(),
         focused: true,
     }];
-    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    let mut config = Config::default();
+    config.ui.sidebar.agents.rows = vec![vec![
+        crate::config::AgentSidebarToken::StateIcon,
+        crate::config::AgentSidebarToken::Tab,
+        crate::config::AgentSidebarToken::Agent,
+    ]];
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
     state.set_snapshot(Box::new(projected));
     state.set_pane_surface(surface());
     let frame = state.compose(106, 30).expect("agent sidebar frame");
@@ -927,7 +935,6 @@ fn active_agent_view_controls_sidebar_order_and_focus_indices() {
             .collect::<Vec<_>>(),
         vec!["pane_2", "pane_3"]
     );
-    assert_eq!(state.hits.agent_sort_toggle, Rect::default());
 
     let mut focus = ClientShellInput::default();
     state.record_binding(
@@ -959,7 +966,7 @@ fn active_agent_view_controls_sidebar_order_and_focus_indices() {
 }
 
 #[test]
-fn agent_sort_toggle_is_client_local_and_persists_per_endpoint() {
+fn saved_agent_sort_preferences_still_load_and_are_ignored() {
     let path = std::env::temp_dir().join(format!(
         "herdr-shell-agent-sort-{}-{}.json",
         std::process::id(),
@@ -968,51 +975,15 @@ fn agent_sort_toggle_is_client_local_and_persists_per_endpoint() {
             .expect("clock after epoch")
             .as_nanos()
     ));
-    let mut projected = snapshot();
-    projected.agents.push(ClientShellAgent {
-        pane_id: "pane_1".into(),
-        workspace_id: "ws_1".into(),
-        tab_id: "tab_1".into(),
-        name: Some("pi".into()),
-        display_agent: None,
-        agent: Some("pi".into()),
-        title: None,
-        terminal_title: None,
-        terminal_title_stripped: None,
-        agent_status: AgentStatus::Working,
-        state_change_seq: 1,
-        state_labels: Vec::new(),
-        tokens: Vec::new(),
-        focused: true,
-    });
+    std::fs::write(
+        &path,
+        r#"{"sidebar_width": 30, "agent_panel_sort": "priority"}"#,
+    )
+    .expect("write saved preferences");
     let config =
         ClientShellConfig::from_config(&Config::default()).with_preferences_path(path.clone());
-    let mut state = ClientShellState::new(config);
-    state.set_snapshot(Box::new(projected));
-    state.set_pane_surface(surface());
-    state.compose(106, 30).expect("agent sidebar frame");
-    let toggle = state.hits.agent_sort_toggle;
-
-    let click = state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        column: toggle.x,
-        row: toggle.y,
-        modifiers: KeyModifiers::empty(),
-    })]);
-
-    assert_eq!(
-        state.config.agent_panel_sort,
-        crate::config::AgentPanelSortConfig::Priority
-    );
-    assert!(click.actions.is_empty());
-    let reloaded_config =
-        ClientShellConfig::from_config(&Config::default()).with_preferences_path(path.clone());
-    let reloaded = ClientShellState::new(reloaded_config);
-    assert_eq!(
-        reloaded.config.agent_panel_sort,
-        crate::config::AgentPanelSortConfig::Priority
-    );
-    assert!(reloaded.agent_panel_sort_manual);
+    let state = ClientShellState::new(config);
+    assert_eq!(state.sidebar_width, 30);
     std::fs::remove_file(path).expect("remove agent sort preferences");
 }
 

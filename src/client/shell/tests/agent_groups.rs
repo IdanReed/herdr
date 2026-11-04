@@ -41,14 +41,15 @@ fn grouped_snapshot(alpha_agents: usize) -> ClientShellSnapshot {
             pane_id,
             workspace_id: workspace_id.into(),
             tab_id: tab_id.into(),
-            name: Some(format!("agent {}", index + 1)),
+            name: None,
             display_agent: None,
             agent: Some("pi".into()),
             title: None,
             terminal_title: None,
             terminal_title_stripped: None,
             agent_status: AgentStatus::Idle,
-            state_change_seq: index as u64 + 1,
+            // Equal states sort by the latest change, so keep the pane order.
+            state_change_seq: 100 - index as u64,
             state_labels: Vec::new(),
             tokens: Vec::new(),
             focused: index == 0,
@@ -57,20 +58,12 @@ fn grouped_snapshot(alpha_agents: usize) -> ClientShellSnapshot {
     snapshot
 }
 
-fn grouped_config() -> Config {
-    let mut config = Config::default();
-    config.ui.sidebar.agents.group_by_space = true;
-    config
-}
-
 /// `grouped_snapshot(2)` with a session name from each source the panel reads.
 fn named_snapshot() -> ClientShellSnapshot {
     let mut snapshot = grouped_snapshot(2);
-    snapshot.agents[0].name = None;
     snapshot.agents[0].terminal_title = Some("✳ fix login".into());
     snapshot.agents[0].terminal_title_stripped = Some("fix login".into());
     // A bare default title is not a name.
-    snapshot.agents[1].name = None;
     snapshot.agents[1].terminal_title = Some("✳ pi".into());
     snapshot.agents[1].terminal_title_stripped = Some("pi".into());
     snapshot.agents[2].name = Some("reviewer".into());
@@ -118,9 +111,18 @@ fn agent_row_index(state: &ClientShellState, pane_id: &str) -> Option<usize> {
         .map(|(rect, _)| usize::from(rect.y - body.y))
 }
 
+fn hit_panes(state: &ClientShellState) -> Vec<&str> {
+    state
+        .hits
+        .agents
+        .iter()
+        .map(|(_, pane_id)| pane_id.as_str())
+        .collect()
+}
+
 #[test]
 fn agents_appear_under_a_heading_for_their_space() {
-    let mut state = shell(named_snapshot(), &grouped_config());
+    let mut state = shell(named_snapshot(), &Config::default());
     let rows = agent_body_rows(&mut state, 30);
 
     let position = |predicate: &dyn Fn(&str) -> bool| {
@@ -154,13 +156,7 @@ fn agents_appear_under_a_heading_for_their_space() {
     assert!(rows[second].ends_with("Unnamed"), "{}", rows[second]);
     assert!(rows[third].ends_with("reviewer"), "{}", rows[third]);
 
-    let hit_panes = state
-        .hits
-        .agents
-        .iter()
-        .map(|(_, pane_id)| pane_id.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(hit_panes, ["pane_1", "pane_2", "pane_3"]);
+    assert_eq!(hit_panes(&state), ["pane_1", "pane_2", "pane_3"]);
     // Headings are not agent hit targets.
     let body = state.hits.agent_body;
     assert!(state
@@ -171,8 +167,82 @@ fn agents_appear_under_a_heading_for_their_space() {
 }
 
 #[test]
+fn agents_sort_by_attention_inside_each_space() {
+    let mut snapshot = grouped_snapshot(3);
+    snapshot.agents[1].agent_status = AgentStatus::Working;
+    snapshot.agents[2].agent_status = AgentStatus::Blocked;
+    // The beta agent needs attention too, but beta stays after alpha.
+    snapshot.agents[3].agent_status = AgentStatus::Blocked;
+    let mut state = shell(snapshot, &Config::default());
+    agent_body_rows(&mut state, 30);
+    assert_eq!(hit_panes(&state), ["pane_3", "pane_2", "pane_1", "pane_4"]);
+
+    // Agent navigation follows the panel order.
+    assert_eq!(
+        super::super::agent_sidebar::ordered_agent_pane_ids(state.snapshot.as_deref().unwrap()),
+        ["pane_3", "pane_2", "pane_1", "pane_4"]
+    );
+    let mut outcome = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::FocusAgent(0)),
+        &mut outcome,
+    );
+    let focused = outcome.actions.iter().find_map(|action| match action {
+        ClientShellAction::Endpoint { request, .. } => match &request.method {
+            crate::api::schema::Method::PaneFocus(target) => Some(target.pane_id.clone()),
+            _ => None,
+        },
+        _ => None,
+    });
+    assert_eq!(focused.as_deref(), Some("pane_3"));
+}
+
+#[test]
+fn retired_sort_settings_keep_the_grouped_panel() {
+    let config: Config = toml::from_str(
+        "[ui]\nagent_panel_sort = \"priority\"\n\n[ui.sidebar.agents]\ngroup_by_space = false\n",
+    )
+    .expect("retired keys still parse");
+    let mut state = shell(grouped_snapshot(2), &config);
+    let rows = agent_body_rows(&mut state, 30);
+    assert!(rows.iter().any(|row| is_heading(row, "beta")), "{rows:#?}");
+
+    // The panel header has no sort toggle.
+    let frame = state.compose(106, 30).expect("frame");
+    let header = &frame_rows(&frame)[usize::from(state.hits.agent_body.y - 2)];
+    assert!(header.contains(" agents"), "{header}");
+    assert!(
+        !header.contains("grouped") && !header.contains("priority"),
+        "{header}"
+    );
+}
+
+#[test]
+fn custom_agent_views_show_a_flat_list_in_their_order() {
+    let mut snapshot = grouped_snapshot(2);
+    snapshot.agent_view_label = Some("focus".into());
+    snapshot.agent_order = vec!["pane_3".into(), "pane_1".into()];
+    let mut state = shell(snapshot, &Config::default());
+    let rows = agent_body_rows(&mut state, 30);
+    assert!(
+        !rows
+            .iter()
+            .any(|row| is_heading(row, "alpha") || is_heading(row, "beta")),
+        "{rows:#?}"
+    );
+    assert_eq!(hit_panes(&state), ["pane_3", "pane_1"]);
+    // Without headings the rows name their space.
+    assert!(rows.iter().any(|row| row.contains("alpha")), "{rows:#?}");
+    assert!(!rows.iter().any(|row| row.contains("Unnamed")), "{rows:#?}");
+
+    let frame = state.compose(106, 30).expect("frame");
+    let header = &frame_rows(&frame)[usize::from(state.hits.agent_body.y - 2)];
+    assert!(header.contains("focus"), "{header}");
+}
+
+#[test]
 fn heading_spacing_adds_to_the_configured_row_gap() {
-    let mut config = grouped_config();
+    let mut config = Config::default();
     config.ui.sidebar.agents.row_gap = 1;
     let mut state = shell(grouped_snapshot(2), &config);
     let rows = agent_body_rows(&mut state, 30);
@@ -205,7 +275,7 @@ fn heading_spacing_adds_to_the_configured_row_gap() {
 
 #[test]
 fn clicking_below_a_heading_gap_hits_the_right_agent() {
-    let mut state = shell(grouped_snapshot(2), &grouped_config());
+    let mut state = shell(grouped_snapshot(2), &Config::default());
     let rows = agent_body_rows(&mut state, 30);
     let body = state.hits.agent_body;
     let beta = rows
@@ -240,43 +310,8 @@ fn clicking_below_a_heading_gap_hits_the_right_agent() {
 }
 
 #[test]
-fn agent_list_stays_flat_without_the_option_or_with_priority_sort() {
-    let mut priority = grouped_config();
-    priority.ui.agent_panel_sort = crate::config::AgentPanelSortConfig::Priority;
-    for config in [Config::default(), priority] {
-        let mut state = shell(grouped_snapshot(2), &config);
-        let rows = agent_body_rows(&mut state, 30);
-        assert!(
-            !rows
-                .iter()
-                .any(|row| is_heading(row, "alpha") || is_heading(row, "beta")),
-            "{rows:#?}"
-        );
-        assert!(rows.iter().any(|row| row.contains("alpha")), "{rows:#?}");
-        assert!(rows.iter().any(|row| row.contains("agent 1")), "{rows:#?}");
-        assert!(!rows.iter().any(|row| row.contains("unnamed")), "{rows:#?}");
-    }
-
-    // Toggling the panel to priority drops the headings.
-    let mut state = shell(grouped_snapshot(2), &grouped_config());
-    assert!(agent_body_rows(&mut state, 30)
-        .iter()
-        .any(|row| is_heading(row, "beta")));
-    let toggle = state.hits.agent_sort_toggle;
-    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        column: toggle.x,
-        row: toggle.y,
-        modifiers: KeyModifiers::empty(),
-    })]);
-    assert!(!agent_body_rows(&mut state, 30)
-        .iter()
-        .any(|row| is_heading(row, "beta")));
-}
-
-#[test]
 fn moving_to_an_agent_out_of_view_reveals_its_space_heading() {
-    let mut state = shell(grouped_snapshot(12), &grouped_config());
+    let mut state = shell(grouped_snapshot(12), &Config::default());
     let rows = agent_body_rows(&mut state, 24);
     assert!(
         agent_row_index(&state, "pane_13").is_none(),

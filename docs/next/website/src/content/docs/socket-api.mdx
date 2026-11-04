@@ -531,9 +531,9 @@ Effective status values are `idle`, `working`, `blocked`, `done`, and `unknown`;
 Sort fields are `workspace_order`, `tab_order`, `pane_order`, `attention`,
 `status`, `agent`, `seen`, `state_change_seq`, or `{"token":"name"}`. Sorts are
 stable, evaluated in order, and accept `asc` or `desc`. Missing values stay
-after present values. When `sort` is omitted, the existing
-`ui.agent_panel_sort` policy remains active. A custom sort temporarily replaces
-that policy without rewriting config.
+after present values. When `sort` is omitted, agents keep the Agent panel
+order: by space, then by attention inside each space. A custom sort temporarily
+replaces that order without rewriting config.
 
 `source` identifies the owner. Plugins use `plugin:<HERDR_PLUGIN_ID>`; Herdr
 rejects plugin-owned sets when that plugin is missing or disabled. Other callers

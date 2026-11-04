@@ -53,10 +53,11 @@ pub(super) struct AggregateAgentTarget {
     pub(super) pane_id: String,
 }
 
+/// Agents of every endpoint in panel order: by endpoint, then by space, then by
+/// attention inside each space. A custom agent view sort replaces that order.
 pub(super) fn aggregate_agent_rows<'a>(
     endpoints: &'a [ClientShellEndpoint],
     active_endpoint_id: &ClientEndpointId,
-    sort: crate::config::AgentPanelSortConfig,
 ) -> Vec<AggregateAgentRow<'a>> {
     let active_index = endpoints
         .iter()
@@ -126,13 +127,13 @@ pub(super) fn aggregate_agent_rows<'a>(
                 return rows;
             }
         }
-        sort_aggregate_rows(&mut rows, sort);
+        sort_aggregate_rows(&mut rows);
         return rows;
     }
 
-    let mut rows = cached_endpoint_snapshots(endpoints)
+    cached_endpoint_snapshots(endpoints)
         .flat_map(|endpoint| {
-            super::agent_sidebar::ordered_agent_pane_ids(endpoint.snapshot, sort)
+            super::agent_sidebar::ordered_agent_pane_ids(endpoint.snapshot)
                 .into_iter()
                 .filter_map(move |pane_id| {
                     let agent = endpoint
@@ -151,24 +152,25 @@ pub(super) fn aggregate_agent_rows<'a>(
                     })
                 })
         })
-        .collect::<Vec<_>>();
-    sort_aggregate_rows(&mut rows, sort);
-    rows
+        .collect()
 }
 
-fn sort_aggregate_rows(
-    rows: &mut [AggregateAgentRow<'_>],
-    sort: crate::config::AgentPanelSortConfig,
-) {
-    if sort == crate::config::AgentPanelSortConfig::Priority {
-        rows.sort_by_key(|row| {
-            (
-                row.endpoint.stale(),
-                std::cmp::Reverse(status_priority(row.agent.agent_status)),
-                std::cmp::Reverse(row.recency),
-            )
-        });
-    }
+fn sort_aggregate_rows(rows: &mut [AggregateAgentRow<'_>]) {
+    rows.sort_by_cached_key(|row| {
+        let workspace = row
+            .endpoint
+            .snapshot
+            .workspaces
+            .iter()
+            .position(|workspace| workspace.workspace_id == row.agent.workspace_id)
+            .unwrap_or(usize::MAX);
+        (
+            row.endpoint.endpoint_index,
+            workspace,
+            std::cmp::Reverse(status_priority(row.agent.agent_status)),
+            std::cmp::Reverse(row.recency),
+        )
+    });
 }
 
 struct ClientAgentViewEntry<'a> {
@@ -263,9 +265,8 @@ impl crate::agent_view_eval::AgentViewEntry for ClientAgentViewEntry<'_> {
 pub(super) fn online_agent_targets(
     endpoints: &[ClientShellEndpoint],
     active_endpoint_id: &ClientEndpointId,
-    sort: crate::config::AgentPanelSortConfig,
 ) -> Vec<AggregateAgentTarget> {
-    aggregate_agent_rows(endpoints, active_endpoint_id, sort)
+    aggregate_agent_rows(endpoints, active_endpoint_id)
         .into_iter()
         .filter(|row| !row.endpoint.stale())
         .map(|row| AggregateAgentTarget {
