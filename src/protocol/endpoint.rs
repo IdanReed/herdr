@@ -31,12 +31,24 @@ pub const AGENT_VIEW_PROJECTION_CAPABILITY: &str = "agent_view_projection";
 pub const AGENT_VIEW_PROJECTION_KIND: &str = "endpoint.agent-view.v1";
 pub const AGENT_COMPLETIONS_CAPABILITY: &str = "agent_completions";
 pub const AGENT_COMPLETIONS_KIND: &str = "endpoint.agent-completions.v1";
+pub const NOTIFICATION_LOG_KIND: &str = "endpoint.notification-log.v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointAgentCompletions {
     pub boot_id: String,
     pub revision: u64,
     pub completions: std::collections::BTreeMap<String, u64>,
+}
+
+/// Optional companion to a V1 snapshot that carries the endpoint notification log, newest
+/// entry first. `revision` counts log changes within one boot and is independent of the
+/// snapshot revision. Clients that do not know this control ignore it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EndpointNotificationLog {
+    pub boot_id: String,
+    pub revision: u64,
+    #[serde(default)]
+    pub entries: Vec<crate::api::schema::NotificationLogEntry>,
 }
 
 fn default_true() -> bool {
@@ -119,6 +131,15 @@ pub fn agent_completions_message(
     Ok(ServerMessage::EndpointControl {
         kind: AGENT_COMPLETIONS_KIND.into(),
         data: serde_json::to_string(projection)?,
+    })
+}
+
+pub fn notification_log_message(
+    log: &EndpointNotificationLog,
+) -> serde_json::Result<ServerMessage> {
+    Ok(ServerMessage::EndpointControl {
+        kind: NOTIFICATION_LOG_KIND.into(),
+        data: serde_json::to_string(log)?,
     })
 }
 
@@ -331,6 +352,42 @@ mod tests {
                 .unwrap(),
             Some(view)
         );
+    }
+
+    #[test]
+    fn notification_log_is_a_named_json_control_that_tolerates_future_fields() {
+        let log = EndpointNotificationLog {
+            boot_id: "boot".into(),
+            revision: 3,
+            entries: vec![crate::api::schema::NotificationLogEntry {
+                id: "n2".into(),
+                title: "finished".into(),
+                body: None,
+                workspace_id: Some("w1".into()),
+                source: Some("jobs".into()),
+                created_unix_ms: 1_000,
+                read: false,
+            }],
+        };
+        let ServerMessage::EndpointControl { kind, data } = notification_log_message(&log).unwrap()
+        else {
+            panic!("notification log should use endpoint control");
+        };
+        assert_eq!(kind, NOTIFICATION_LOG_KIND);
+        assert_eq!(
+            serde_json::from_str::<EndpointNotificationLog>(&data).unwrap(),
+            log
+        );
+
+        let mut value = serde_json::from_str::<serde_json::Value>(&data).unwrap();
+        value["future"] = serde_json::json!(true);
+        value["entries"][0]["future"] = serde_json::json!("ignored");
+        value["entries"][0].as_object_mut().unwrap().remove("read");
+        let decoded: EndpointNotificationLog = serde_json::from_value(value).unwrap();
+        assert!(!decoded.entries[0].read);
+        let minimal: EndpointNotificationLog =
+            serde_json::from_str(r#"{"boot_id":"boot","revision":0}"#).unwrap();
+        assert!(minimal.entries.is_empty());
     }
 
     #[test]

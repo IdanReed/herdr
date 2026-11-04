@@ -23,6 +23,7 @@ pub(crate) struct ClientShellConfig {
     pub(super) hide_tab_bar_when_single_tab: bool,
     pub(super) spaces: SpacesSidebarConfig,
     pub(super) agents: crate::config::AgentsSidebarConfig,
+    pub(super) notifications: crate::config::NotificationsSidebarConfig,
     pub(super) agent_panel_sort: crate::config::AgentPanelSortConfig,
     pub(super) status_indicators: crate::config::StatusIndicatorStyle,
     pub(super) sound_enabled: bool,
@@ -100,8 +101,15 @@ pub(super) struct ShellHitMap {
     pub(super) agent_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(super) agent_max_scroll: usize,
     pub(super) agent_sort_toggle: Rect,
+    pub(super) notification_log: Vec<super::notification_log::NotificationLogHit>,
+    pub(super) notification_log_body: Rect,
+    pub(super) notification_log_scrollbar: Rect,
+    pub(super) notification_log_scroll_metrics: Option<crate::pane::ScrollMetrics>,
+    pub(super) notification_log_max_scroll: usize,
     pub(super) sidebar_divider: Rect,
     pub(super) sidebar_section_divider: Rect,
+    /// Rows that the section divider's split ratio divides.
+    pub(super) sidebar_section_span: Rect,
     pub(super) sidebar_toggle: Rect,
     pub(super) new_workspace: Rect,
     pub(super) new_tab: Rect,
@@ -195,6 +203,9 @@ pub(super) enum ClientChromeDrag {
     AgentScrollbar {
         grab_row_offset: u16,
     },
+    NotificationLogScrollbar {
+        grab_row_offset: u16,
+    },
     HelpScrollbar {
         grab_row_offset: u16,
     },
@@ -284,6 +295,7 @@ pub(super) enum ScopeMode {
     Tab,
     Workspace,
     Agent,
+    Notification,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -894,6 +906,9 @@ pub(crate) struct ClientShellState {
     pub(super) remote_collapsed_groups: HashMap<ClientEndpointId, HashSet<String>>,
     pub(super) workspace_scroll: usize,
     pub(super) agent_scroll: usize,
+    pub(super) notification_scroll: usize,
+    /// Notification log entry highlighted in notifications mode.
+    pub(super) selected_notification_id: Option<String>,
     pub(super) pending_agent_reveal: Option<(ClientEndpointId, String)>,
     pub(super) tab_scroll: usize,
     pub(super) mobile_switcher_scroll: usize,
@@ -1068,6 +1083,8 @@ impl ClientShellState {
             remote_collapsed_groups,
             workspace_scroll: 0,
             agent_scroll: 0,
+            notification_scroll: 0,
+            selected_notification_id: None,
             pending_agent_reveal: None,
             tab_scroll: 0,
             mobile_switcher_scroll: 0,
@@ -1257,6 +1274,8 @@ impl ClientShellState {
         self.tab_press = None;
         self.workspace_scroll = 0;
         self.agent_scroll = 0;
+        self.notification_scroll = 0;
+        self.selected_notification_id = None;
         self.tab_scroll = 0;
         self.mobile_switcher_scroll = 0;
         self.reveal_focused_workspace = true;

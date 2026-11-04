@@ -51,7 +51,7 @@ use crate::server::client_accept::{
     accept_pending_client_connections, reject_pending_client_connections,
 };
 use crate::server::client_shell::{
-    render_pane_surface as render_client_shell_pane_surface,
+    notification_log_projection, render_pane_surface as render_client_shell_pane_surface,
     snapshot_with_completions as client_shell_snapshot,
 };
 use crate::server::client_transport::ServerEvent;
@@ -2007,10 +2007,25 @@ impl HeadlessServer {
                         return false;
                     }
                 };
+                // Revision 0 means nothing was ever posted, so there is nothing to send.
+                let notification_log =
+                    notification_log_projection(&self.app, &self.client_shell_boot_id);
+                let notification_log_message = if notification_log.revision == 0 {
+                    None
+                } else {
+                    match crate::protocol::endpoint::notification_log_message(&notification_log) {
+                        Ok(message) => Some(message),
+                        Err(err) => {
+                            warn!(client_id, err = %err, "failed to encode notification log");
+                            return false;
+                        }
+                    }
+                };
                 connection.shell_location = Some(location);
                 connection.shell_snapshot = Some(seed_snapshot);
                 connection.shell_agent_completions = Some(completion_projection);
                 connection.shell_agent_view = agent_view;
+                connection.shell_notification_log_revision = Some(notification_log.revision);
                 self.clients.insert(client_id, connection);
                 if self.app.state.popup_pane.is_some() && self.popup_owner_tab_id.is_none() {
                     self.popup_owner_tab_id = self.shell_tab_id_for_client(client_id);
@@ -2019,6 +2034,9 @@ impl HeadlessServer {
                     self.send_to_client(client_id, message);
                 }
                 self.send_to_client(client_id, completion_message);
+                if let Some(message) = notification_log_message {
+                    self.send_to_client(client_id, message);
+                }
                 self.send_to_client(client_id, snapshot_message);
                 if surface_active {
                     self.foreground_client_id = Some(client_id);

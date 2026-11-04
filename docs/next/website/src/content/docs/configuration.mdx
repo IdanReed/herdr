@@ -510,6 +510,26 @@ On macOS, `system` tries `terminal-notifier` first and falls back to `/usr/bin/o
 
 On Windows, `system` notifications remain in Notification Center. Clicking one selects its originating pane in the running Herdr client and brings its terminal window forward when Windows exposes that window. A click cannot reopen a closed client or select a pane from a restarted server. Windows Terminal can bring the owning window forward, but cannot reliably select a different outer terminal tab.
 
+Scripts can also post entries to a notification log with `herdr notification add` or the `notification.add` socket method. The sidebar shows the log as a third section below the agents. The section is off by default:
+
+```toml
+[ui.sidebar.notifications]
+enabled = true
+```
+
+When it is on, spaces, agents, and notifications each take a third of the expanded sidebar. Dragging the divider between spaces and agents resizes only those two sections. The section stays hidden in the collapsed and mobile views and when the sidebar is too short to give each section room.
+
+Entries are listed newest first. An unread entry has a `●` marker, and the header counts unread entries. The second line of an entry names its workspace and shows its body. Click an entry to focus its workspace and mark it read. An entry whose workspace has closed is dimmed; opening it only marks it read. Scroll the section with the mouse wheel or its scrollbar.
+
+For keyboard access, bind `notification_mode`, which is unset by default:
+
+```toml
+[keys]
+notification_mode = "prefix+i"
+```
+
+In notifications mode, `j`/`k` or the arrow keys open the next or previous entry, `x` dismisses the highlighted entry, and Esc or Enter leaves the mode. See [Keyboard: modes](/docs/keyboard/#modes).
+
 ## Sound
 
 Sound notifications play through the local Herdr client. Custom sounds must be mp3 files; Herdr resolves relative paths from the config file's directory.

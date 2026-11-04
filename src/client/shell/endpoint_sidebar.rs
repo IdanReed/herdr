@@ -249,10 +249,14 @@ pub(super) fn render_expanded(
     } else {
         Rect::new(area.right().saturating_sub(1), area.y, 1, area.height)
     };
-    let (workspace_area, detail_area) =
-        crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
-    hits.sidebar_section_divider =
-        crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
+    let layout = crate::ui::expanded_sidebar_layout(
+        area,
+        state.sidebar_section_split,
+        config.notifications.enabled && active_snapshot.is_some(),
+    );
+    let (workspace_area, detail_area) = (layout.spaces, layout.agents);
+    hits.sidebar_section_divider = layout.divider;
+    hits.sidebar_section_span = layout.split_span;
     put_text(
         buffer,
         workspace_area.x,
@@ -563,6 +567,11 @@ pub(super) fn render_expanded(
         state.agent_scroll,
         hits,
     );
+    if let Some(snapshot) = active_snapshot {
+        super::sidebar::render_notification_log_section(
+            buffer, layout.log, snapshot, config, state, hits,
+        );
+    }
     hits.sidebar_toggle = Rect::new(
         area.right().saturating_sub(2),
         area.bottom().saturating_sub(1),

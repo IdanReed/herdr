@@ -250,6 +250,9 @@ pub(super) struct ShellRenderState<'a> {
     pub(super) remote_collapsed_groups: &'a HashMap<ClientEndpointId, HashSet<String>>,
     pub(super) workspace_scroll: &'a mut usize,
     pub(super) agent_scroll: &'a mut usize,
+    pub(super) notification_scroll: &'a mut usize,
+    /// Highlighted notification log entry, shown only in notifications mode.
+    pub(super) selected_notification_id: Option<&'a str>,
     pub(super) tab_scroll: &'a mut usize,
     pub(super) reveal_focused_workspace: &'a mut bool,
     pub(super) reveal_focused_tab: &'a mut bool,
@@ -339,6 +342,8 @@ pub(super) fn render_shell(
         hits.workspace_scrollbar = Rect::default();
         hits.agent_scrollbar = Rect::default();
         hits.agent_sort_toggle = Rect::default();
+        hits.notification_log.clear();
+        hits.notification_log_scrollbar = Rect::default();
         hits.new_workspace = Rect::default();
         hits.machines.clear();
         hits.workspaces.clear();

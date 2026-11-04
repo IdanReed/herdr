@@ -866,6 +866,12 @@
           "description": "Enter agents mode: h/j/k/l or arrows move focus between agents. Set to \"\" to send the key to the pane."
         },
         {
+          "key": "keys.notification_mode",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Enter notifications mode: j/k or arrows open the next or previous notification log entry, and x dismisses the highlighted entry. Requires ui.sidebar.notifications.enabled. Unset by default."
+        },
+        {
           "key": "keys.indexed.tabs",
           "type": "string",
           "default": "unset",
@@ -1108,6 +1114,12 @@
           "type": "table of token rows",
           "default": "{}",
           "description": "Complete Agent-row overrides keyed by strict canonical agent id. Agents without an override use ui.sidebar.agents.rows."
+        },
+        {
+          "key": "ui.sidebar.notifications.enabled",
+          "type": "boolean",
+          "default": "false",
+          "description": "Show the notification log as a third expanded sidebar section below the agents, so spaces, agents, and notifications each take a third. Entries come from herdr notification add or the notification.add socket method."
         },
         {
           "key": "ui.sidebar.spaces.row_gap",

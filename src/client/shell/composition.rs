@@ -63,6 +63,11 @@ impl ClientShellState {
             remote_collapsed_groups: &self.remote_collapsed_groups,
             workspace_scroll: &mut self.workspace_scroll,
             agent_scroll: &mut self.agent_scroll,
+            notification_scroll: &mut self.notification_scroll,
+            selected_notification_id: self
+                .selected_notification_id
+                .as_deref()
+                .filter(|_| self.mode == ClientShellMode::Scope(ScopeMode::Notification)),
             tab_scroll: &mut self.tab_scroll,
             reveal_focused_workspace: &mut self.reveal_focused_workspace,
             reveal_focused_tab: &mut self.reveal_focused_tab,
@@ -219,6 +224,11 @@ impl ClientShellState {
                 remote_collapsed_groups: &self.remote_collapsed_groups,
                 workspace_scroll: &mut self.workspace_scroll,
                 agent_scroll: &mut self.agent_scroll,
+                notification_scroll: &mut self.notification_scroll,
+                selected_notification_id: self
+                    .selected_notification_id
+                    .as_deref()
+                    .filter(|_| self.mode == ClientShellMode::Scope(ScopeMode::Notification)),
                 tab_scroll: &mut self.tab_scroll,
                 reveal_focused_workspace: &mut self.reveal_focused_workspace,
                 reveal_focused_tab: &mut self.reveal_focused_tab,

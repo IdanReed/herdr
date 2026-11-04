@@ -463,6 +463,8 @@ pub struct KeysConfig {
     pub workspace_mode: BindingConfig,
     /// Enter agents mode: move focus between agents. Default: "ctrl+a"
     pub agent_mode: BindingConfig,
+    /// Enter notifications mode: open and dismiss notification log entries. Unset by default.
+    pub notification_mode: BindingConfig,
     /// Optional indexed shortcuts expanded over number keys 1-9.
     pub indexed: IndexedKeysConfig,
     /// Prefix-mode custom command bindings.
@@ -608,6 +610,8 @@ pub(crate) struct KeysConfigOverlay {
     #[serde(skip_serializing_if = "Option::is_none")]
     agent_mode: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    notification_mode: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     indexed: Option<IndexedKeysConfig>,
     #[serde(skip_serializing)]
     command: Option<Vec<CommandKeybindConfig>>,
@@ -723,6 +727,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(tab_mode);
         apply_field!(workspace_mode);
         apply_field!(agent_mode);
+        apply_field!(notification_mode);
         apply_field!(indexed);
         apply_field!(command);
 
@@ -832,6 +837,7 @@ impl KeysConfig {
         copy_effective_action_field!(tab_mode, keybinds.tab_mode);
         copy_effective_action_field!(workspace_mode, keybinds.workspace_mode);
         copy_effective_action_field!(agent_mode, keybinds.agent_mode);
+        copy_effective_action_field!(notification_mode, keybinds.notification_mode);
         copy_user_field!(indexed);
 
         profile
@@ -1208,6 +1214,7 @@ impl Default for KeysConfig {
             tab_mode: BindingConfig::one("ctrl+t"),
             workspace_mode: BindingConfig::one("ctrl+s"),
             agent_mode: BindingConfig::one("ctrl+a"),
+            notification_mode: BindingConfig::empty(),
             indexed: IndexedKeysConfig::default(),
             command: Vec::new(),
             user_fields: BTreeSet::new(),

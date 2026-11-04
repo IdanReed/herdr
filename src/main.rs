@@ -201,6 +201,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # tab_mode = "ctrl+t"
 # workspace_mode = "ctrl+s"  # n new workspace
 # agent_mode = "ctrl+a"      # movement only
+# notification_mode = ""     # j/k open log entries, x dismiss; needs ui.sidebar.notifications
 
 # Navigate-mode movement. These local shortcuts win while navigate mode is open.
 # They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, or 1..9 here.
@@ -376,6 +377,11 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Blank rows between space entries. Set to 1 to restore the previous spacing.
 # row_gap = 0
 # rows = [["state_icon", "workspace"], ["branch", "git_status"]]
+
+# Notification log below the agents. Scripts add entries with `herdr notification add`.
+# When enabled, spaces, agents, and notifications each take a third of the sidebar.
+# [ui.sidebar.notifications]
+# enabled = false
 
 # Background notification popup delivery
 [ui.toast]

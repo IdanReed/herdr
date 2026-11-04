@@ -407,6 +407,7 @@ pub struct Keybinds {
     pub tab_mode: ActionKeybinds,
     pub workspace_mode: ActionKeybinds,
     pub agent_mode: ActionKeybinds,
+    pub notification_mode: ActionKeybinds,
     pub custom_commands: Vec<CustomCommandKeybind>,
 }
 
@@ -594,6 +595,7 @@ impl Config {
             tab_mode: empty_action!(),
             workspace_mode: empty_action!(),
             agent_mode: empty_action!(),
+            notification_mode: empty_action!(),
             custom_commands: Vec::new(),
         };
 
@@ -746,6 +748,7 @@ impl Config {
             apply_action!(keybinds.tab_mode, tab_mode, source);
             apply_action!(keybinds.workspace_mode, workspace_mode, source);
             apply_action!(keybinds.agent_mode, agent_mode, source);
+            apply_action!(keybinds.notification_mode, notification_mode, source);
 
             if source == field_source!(indexed) {
                 append_legacy_indexed_bindings(

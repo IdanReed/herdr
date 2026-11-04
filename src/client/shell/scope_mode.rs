@@ -1,4 +1,4 @@
-//! Pane, tab, spaces, and agents modes.
+//! Pane, tab, spaces, agents, and notifications modes.
 //!
 //! Each mode stays open so movement keys can repeat: h/j/k/l or the arrows
 //! move focus and the shifted keys move the focused item. Creating an item
@@ -24,7 +24,13 @@ impl Direction {
 }
 
 impl ScopeMode {
-    const ALL: [Self; 4] = [Self::Pane, Self::Tab, Self::Workspace, Self::Agent];
+    const ALL: [Self; 5] = [
+        Self::Pane,
+        Self::Tab,
+        Self::Workspace,
+        Self::Agent,
+        Self::Notification,
+    ];
 
     pub(super) fn entered_by(action: KeybindAction) -> Option<Self> {
         match action {
@@ -32,6 +38,7 @@ impl ScopeMode {
             KeybindAction::EnterTabMode => Some(Self::Tab),
             KeybindAction::EnterWorkspaceMode => Some(Self::Workspace),
             KeybindAction::EnterAgentMode => Some(Self::Agent),
+            KeybindAction::EnterNotificationMode => Some(Self::Notification),
             _ => None,
         }
     }
@@ -42,6 +49,7 @@ impl ScopeMode {
             Self::Tab => &keybinds.tab_mode,
             Self::Workspace => &keybinds.workspace_mode,
             Self::Agent => &keybinds.agent_mode,
+            Self::Notification => &keybinds.notification_mode,
         }
     }
 
@@ -51,6 +59,7 @@ impl ScopeMode {
             Self::Tab => " TAB ",
             Self::Workspace => " SPACES ",
             Self::Agent => " AGENTS ",
+            Self::Notification => " NOTIFICATIONS ",
         }
     }
 
@@ -60,6 +69,7 @@ impl ScopeMode {
             Self::Tab => palette.blue,
             Self::Workspace => palette.green,
             Self::Agent => palette.peach,
+            Self::Notification => palette.yellow,
         }
     }
 
@@ -81,12 +91,14 @@ impl ScopeMode {
                 ("esc", "done"),
             ],
             Self::Agent => &[("j/k ↑/↓", "focus"), ("esc", "done")],
+            Self::Notification => &[("j/k ↑/↓", "open"), ("x", "dismiss"), ("esc", "done")],
         }
     }
 
-    fn focus_action(self, direction: Direction) -> KeybindAction {
+    /// The action that moves focus, or `None` for notifications, which have no focus.
+    fn focus_action(self, direction: Direction) -> Option<KeybindAction> {
         let toward_end = direction.toward_end();
-        match self {
+        Some(match self {
             Self::Pane => match direction {
                 Direction::Left => KeybindAction::FocusPaneLeft,
                 Direction::Down => KeybindAction::FocusPaneDown,
@@ -99,7 +111,8 @@ impl ScopeMode {
             Self::Workspace => KeybindAction::PreviousWorkspace,
             Self::Agent if toward_end => KeybindAction::NextAgent,
             Self::Agent => KeybindAction::PreviousAgent,
-        }
+            Self::Notification => return None,
+        })
     }
 
     /// The item key that creates something, which also closes the mode.
@@ -114,6 +127,10 @@ impl ScopeMode {
             _ => None,
         }
     }
+}
+
+fn plain_key(key: &TerminalKey, character: char) -> bool {
+    terminal_key_matches_combo(key, (KeyCode::Char(character), KeyModifiers::empty()))
 }
 
 /// h/j/k/l or an arrow, and whether Shift was held to move the focused item.
@@ -161,8 +178,15 @@ impl ClientShellState {
         }
 
         if let Some((direction, shifted)) = movement(key) {
-            if !shifted {
-                let action = scope.focus_action(direction);
+            if scope == ScopeMode::Notification {
+                // The log is a vertical list whose order the user does not arrange.
+                if !shifted && matches!(direction, Direction::Up | Direction::Down) {
+                    self.open_adjacent_notification(direction.toward_end(), outcome);
+                }
+                outcome.repaint = true;
+                return;
+            }
+            if let Some(action) = scope.focus_action(direction).filter(|_| !shifted) {
                 self.record_binding(KeybindMatch::Action(action), outcome);
                 outcome.repaint = true;
                 return;
@@ -189,7 +213,7 @@ impl ClientShellState {
                     self.move_focused_workspace(direction.toward_end(), outcome);
                 }
                 // Agents follow the panel order, which the user does not arrange.
-                ScopeMode::Agent => {}
+                ScopeMode::Agent | ScopeMode::Notification => {}
             }
             outcome.repaint = true;
             return;
@@ -201,11 +225,32 @@ impl ClientShellState {
             outcome.repaint = true;
             return;
         }
+        if scope == ScopeMode::Notification && plain_key(key, 'x') {
+            self.dismiss_selected_notification(outcome);
+            return;
+        }
         // A mode bound under the prefix closes or switches on its bare key. Item
         // keys are checked first so they keep working if the two overlap.
         if let Some(next) = self.scope_mode_key(key, false) {
             self.switch_scope_mode(scope, next, outcome);
         }
+    }
+
+    /// Notifications mode needs the log section, which is off by default.
+    fn scope_mode_available(&self, scope: ScopeMode) -> bool {
+        scope != ScopeMode::Notification || self.config.notifications.enabled
+    }
+
+    /// Opens a mode. Notifications mode starts with no entry highlighted.
+    pub(super) fn enter_scope_mode(&mut self, scope: ScopeMode, outcome: &mut ClientShellInput) {
+        if !self.scope_mode_available(scope) {
+            return;
+        }
+        if scope == ScopeMode::Notification {
+            self.selected_notification_id = None;
+        }
+        self.mode = ClientShellMode::Scope(scope);
+        outcome.repaint = true;
     }
 
     fn scope_mode_key(&self, key: &TerminalKey, direct: bool) -> Option<ScopeMode> {
@@ -229,8 +274,7 @@ impl ClientShellState {
         if next == current {
             self.exit_scope_mode(outcome);
         } else {
-            self.mode = ClientShellMode::Scope(next);
-            outcome.repaint = true;
+            self.enter_scope_mode(next, outcome);
         }
     }
 

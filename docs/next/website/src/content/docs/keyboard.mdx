@@ -80,8 +80,11 @@ Modes keep Herdr listening after one key, so you can move around without pressin
 | Tab | `ctrl+t` | none |
 | Spaces | `ctrl+s` | `n` new workspace |
 | Agents | `ctrl+a` | none |
+| Notifications | unset | `x` dismiss |
 
 In every mode, `h/j/k/l` or the arrow keys move focus. Add Shift to move the focused pane, tab, or workspace instead. Tabs move left and right, while workspaces and agents move up and down the sidebar. The Agents panel sets the agent order, so agents mode only moves focus.
+
+Notifications mode works with the [notification log](/docs/configuration/#notifications) and needs `ui.sidebar.notifications.enabled = true`. Its key is unset by default; set `notification_mode` to use it. `j/k` or the arrow keys open the next or previous entry: Herdr highlights it, focuses its workspace, and marks it read. `x` dismisses the highlighted entry.
 
 A mode stays open until you press Esc, Enter, or its key again. Pressing another mode's key switches to that mode. Splitting a pane or creating a workspace returns to the terminal so you can type into it right away. The prefix still works while a mode is open.
 

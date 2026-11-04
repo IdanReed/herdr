@@ -1010,6 +1010,107 @@ async fn client_shell_pairs_agent_view_set_replacement_and_clear_with_snapshots(
     assert!(cleared_snapshot.agent_view_label.is_none());
 }
 
+/// Reads one shell replacement: its optional notification log and its snapshot.
+fn client_shell_replacement_with_log(
+    receiver: &std::sync::mpsc::Receiver<Vec<u8>>,
+) -> (
+    Option<crate::protocol::endpoint::EndpointNotificationLog>,
+    Box<protocol::ClientShellSnapshot>,
+) {
+    let mut log = None;
+    loop {
+        let ServerMessage::EndpointControl { kind, data } = read_server_message(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("shell replacement"),
+        ) else {
+            panic!("expected endpoint control");
+        };
+        match kind.as_str() {
+            protocol::endpoint::NOTIFICATION_LOG_KIND => {
+                assert!(log.is_none(), "one log per replacement");
+                log = Some(serde_json::from_str(&data).expect("notification log"));
+            }
+            protocol::endpoint::ENDPOINT_SNAPSHOT_KIND => {
+                return (log, serde_json::from_str(&data).expect("snapshot"));
+            }
+            protocol::endpoint::AGENT_COMPLETIONS_KIND
+            | protocol::endpoint::AGENT_VIEW_PROJECTION_KIND => {}
+            other => panic!("unexpected control {other}"),
+        }
+    }
+}
+
+fn connect_test_client_shell(
+    server: &mut HeadlessServer,
+    client_id: u64,
+) -> std::sync::mpsc::Receiver<Vec<u8>> {
+    let (writer, control_rx, _render_rx) = test_client_writer();
+    assert!(
+        server.handle_server_event(ServerEvent::ClientShellConnected {
+            surface_reuse: false,
+            surface_delta: false,
+            surface_scroll: false,
+            client_id,
+            surface_cols: 80,
+            surface_rows: 23,
+            cell_width_px: 0,
+            cell_height_px: 0,
+            pixel_mouse: false,
+            direct_graphics: false,
+            endpoint_keybindings: false,
+            mouse_capture: false,
+            surface_active: false,
+            writer,
+        })
+    );
+    control_rx
+}
+
+#[tokio::test]
+async fn client_shell_receives_the_notification_log_before_the_snapshot_it_changes() {
+    let mut server = test_headless_server();
+    // Nothing was posted yet, so attaching sends no log.
+    let control_rx = connect_test_client_shell(&mut server, 77);
+    let (log, initial) = client_shell_replacement_with_log(&control_rx);
+    assert!(log.is_none());
+
+    let response = server.app.handle_api_request(api::schema::Request {
+        id: "add".into(),
+        method: api::schema::Method::NotificationAdd(api::schema::NotificationAddParams {
+            title: "finished".into(),
+            body: None,
+            workspace_id: None,
+            source: Some("jobs".into()),
+        }),
+    });
+    assert!(response.contains("notification_added"), "{response}");
+    server.render_and_stream();
+    let (added, added_snapshot) = client_shell_replacement_with_log(&control_rx);
+    let added = added.expect("log after add");
+    assert_eq!(added.boot_id, added_snapshot.boot_id);
+    assert!(added_snapshot.revision > initial.revision);
+    assert_eq!(added.entries.len(), 1);
+    assert!(!added.entries[0].read);
+
+    server
+        .app
+        .state
+        .notification_log
+        .mark_read(&Default::default());
+    server.render_and_stream();
+    let (read, _) = client_shell_replacement_with_log(&control_rx);
+    let read = read.expect("log after mark read");
+    assert!(read.revision > added.revision);
+    assert!(read.entries[0].read);
+
+    // A client that attaches later receives the current log before its first snapshot.
+    let late_rx = connect_test_client_shell(&mut server, 78);
+    let (late, _) = client_shell_replacement_with_log(&late_rx);
+    assert_eq!(late, Some(read));
+    shutdown_test_runtimes(&mut server);
+}
+
 #[tokio::test]
 async fn client_shell_receives_metadata_then_shell_free_pane_surface() {
     let mut server = test_headless_server();

@@ -22,11 +22,12 @@ impl ClientShellState {
     }
 
     fn set_sidebar_section_from_row(&mut self, row: u16, outcome: &mut ClientShellInput) {
-        let divider = self.hits.sidebar_divider;
-        if divider.height == 0 {
+        // The ratio divides only the spaces and agents rows, not the notification log.
+        let span = self.hits.sidebar_section_span;
+        if span.height == 0 {
             return;
         }
-        let ratio = row.saturating_sub(divider.y) as f32 / divider.height as f32;
+        let ratio = row.saturating_sub(span.y) as f32 / span.height as f32;
         let ratio = ratio.clamp(0.1, 0.9);
         if (self.sidebar_section_split - ratio).abs() > f32::EPSILON {
             self.sidebar_section_split = ratio;
@@ -1062,6 +1063,22 @@ impl ClientShellState {
                     }
                     return;
                 }
+                Some(ClientChromeDrag::NotificationLogScrollbar { grab_row_offset }) => {
+                    if let Some(metrics) = self.hits.notification_log_scroll_metrics {
+                        let offset = crate::ui::scrollbar_offset_from_drag_row(
+                            metrics,
+                            self.hits.notification_log_scrollbar,
+                            mouse.row,
+                            *grab_row_offset,
+                        );
+                        let next = metrics.max_offset_from_bottom.saturating_sub(offset);
+                        if next != self.notification_scroll {
+                            self.notification_scroll = next;
+                            outcome.repaint = true;
+                        }
+                    }
+                    return;
+                }
                 Some(ClientChromeDrag::NavigatorScrollbar { grab_row_offset }) => {
                     if let Some(metrics) = self.hits.navigator_scroll_metrics {
                         let offset = crate::ui::scrollbar_offset_from_drag_row(
@@ -1362,6 +1379,7 @@ impl ClientShellState {
                     }
                     ClientChromeDrag::WorkspaceScrollbar { .. }
                     | ClientChromeDrag::AgentScrollbar { .. }
+                    | ClientChromeDrag::NotificationLogScrollbar { .. }
                     | ClientChromeDrag::HelpScrollbar { .. }
                     | ClientChromeDrag::NavigatorScrollbar { .. }
                     | ClientChromeDrag::ProductAnnouncementScrollbar { .. }
@@ -1912,6 +1930,25 @@ impl ClientShellState {
                     outcome.repaint = true;
                 }
             }
+            MouseEventKind::ScrollUp if super::contains(self.hits.notification_log_body, point) => {
+                let next = self.notification_scroll.saturating_sub(1);
+                if next != self.notification_scroll {
+                    self.notification_scroll = next;
+                    outcome.repaint = true;
+                }
+            }
+            MouseEventKind::ScrollDown
+                if super::contains(self.hits.notification_log_body, point) =>
+            {
+                let next = self
+                    .notification_scroll
+                    .saturating_add(1)
+                    .min(self.hits.notification_log_max_scroll);
+                if next != self.notification_scroll {
+                    self.notification_scroll = next;
+                    outcome.repaint = true;
+                }
+            }
             MouseEventKind::ScrollUp if super::contains(self.hits.workspace_body, point) => {
                 let next = self.workspace_scroll.saturating_sub(1);
                 if next != self.workspace_scroll {
@@ -2020,6 +2057,41 @@ impl ClientShellState {
                             }
                         }
                     }
+                    return;
+                }
+                if super::contains(self.hits.notification_log_scrollbar, point) {
+                    if let Some(metrics) = self.hits.notification_log_scroll_metrics {
+                        if let Some(grab_row_offset) = crate::ui::scrollbar_thumb_grab_offset(
+                            metrics,
+                            self.hits.notification_log_scrollbar,
+                            mouse.row,
+                        ) {
+                            self.chrome_drag = Some(ClientChromeDrag::NotificationLogScrollbar {
+                                grab_row_offset,
+                            });
+                        } else {
+                            let offset = crate::ui::scrollbar_offset_from_row(
+                                metrics,
+                                self.hits.notification_log_scrollbar,
+                                mouse.row,
+                            );
+                            let next = metrics.max_offset_from_bottom.saturating_sub(offset);
+                            if next != self.notification_scroll {
+                                self.notification_scroll = next;
+                                outcome.repaint = true;
+                            }
+                        }
+                    }
+                    return;
+                }
+                let notification_id = self
+                    .hits
+                    .notification_log
+                    .iter()
+                    .find(|hit| super::contains(hit.rect, point))
+                    .map(|hit| hit.id.clone());
+                if let Some(id) = notification_id {
+                    self.open_notification(&id, outcome);
                     return;
                 }
                 if super::contains(self.hits.agent_sort_toggle, point) {

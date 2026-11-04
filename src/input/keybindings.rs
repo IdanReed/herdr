@@ -60,6 +60,7 @@ pub(crate) enum KeybindAction {
     EnterTabMode,
     EnterWorkspaceMode,
     EnterAgentMode,
+    EnterNotificationMode,
     ResizePaneLeft,
     ResizePaneDown,
     ResizePaneUp,
@@ -155,6 +156,10 @@ pub(crate) fn resolve_non_indexed_action(
         (&keybinds.tab_mode, KeybindAction::EnterTabMode),
         (&keybinds.workspace_mode, KeybindAction::EnterWorkspaceMode),
         (&keybinds.agent_mode, KeybindAction::EnterAgentMode),
+        (
+            &keybinds.notification_mode,
+            KeybindAction::EnterNotificationMode,
+        ),
         (&keybinds.reload_config, KeybindAction::ReloadConfig),
         (
             &keybinds.open_notification_target,

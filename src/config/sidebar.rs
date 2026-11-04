@@ -502,11 +502,19 @@ impl Default for SpacesSidebarConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct NotificationsSidebarConfig {
+    /// Show the notification log below the agents, so the sidebar splits into thirds.
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct SidebarConfig {
     pub agents: AgentsSidebarConfig,
     pub spaces: SpacesSidebarConfig,
+    pub notifications: NotificationsSidebarConfig,
 }
 
 #[cfg(test)]
@@ -543,6 +551,11 @@ mod tests {
             ]
         );
         assert_eq!(config.spaces.row_gap, 0);
+        assert!(!config.notifications.enabled);
+        let log: crate::config::Config =
+            toml::from_str("[ui.sidebar.notifications]\nenabled = true\n").expect("log");
+        assert!(log.ui.sidebar.notifications.enabled);
+        assert!(log.collect_diagnostics().is_empty());
     }
 
     #[test]

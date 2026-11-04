@@ -47,32 +47,60 @@ fn sidebar_section_heights(total_height: u16, split_ratio: f32) -> (u16, u16) {
     )
 }
 
-pub(crate) fn expanded_sidebar_sections(area: Rect, split_ratio: f32) -> (Rect, Rect) {
-    let content = Rect::new(area.x, area.y, area.width.saturating_sub(1), area.height);
-    if content.is_empty() {
-        return (Rect::default(), Rect::default());
-    }
-
-    let (workspace_height, detail_height) = sidebar_section_heights(content.height, split_ratio);
-    (
-        Rect::new(content.x, content.y, content.width, workspace_height),
-        Rect::new(
-            content.x,
-            content.y + workspace_height,
-            content.width,
-            detail_height,
-        ),
-    )
+/// Areas of the expanded sidebar.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ExpandedSidebarLayout {
+    pub spaces: Rect,
+    pub agents: Rect,
+    /// Bottom third for the notification log, empty when the log is hidden.
+    pub log: Rect,
+    /// Rows that the spaces/agents split ratio divides.
+    pub split_span: Rect,
+    /// Draggable row between spaces and agents.
+    pub divider: Rect,
 }
 
-pub(crate) fn sidebar_section_divider_rect(area: Rect, split_ratio: f32) -> Rect {
-    let content = Rect::new(area.x, area.y, area.width.saturating_sub(1), area.height);
-    if content.width == 0 || content.height < 6 {
-        return Rect::default();
-    }
+/// Below this height the log stays hidden so spaces and agents keep usable rows.
+const MIN_HEIGHT_WITH_LOG: u16 = 12;
 
-    let (workspace_height, _) = sidebar_section_heights(content.height, split_ratio);
-    Rect::new(content.x, content.y + workspace_height, content.width, 1)
+/// Splits the sidebar into spaces and agents. With `show_log`, the log takes the bottom
+/// third first and the split ratio divides the rest, so the default ratio gives thirds.
+pub(crate) fn expanded_sidebar_layout(
+    area: Rect,
+    split_ratio: f32,
+    show_log: bool,
+) -> ExpandedSidebarLayout {
+    let content = Rect::new(area.x, area.y, area.width.saturating_sub(1), area.height);
+    if content.is_empty() {
+        return ExpandedSidebarLayout::default();
+    }
+    let log_height = if show_log && content.height >= MIN_HEIGHT_WITH_LOG {
+        content.height / 3
+    } else {
+        0
+    };
+    let span = Rect::new(
+        content.x,
+        content.y,
+        content.width,
+        content.height - log_height,
+    );
+    let (workspace_height, detail_height) = sidebar_section_heights(span.height, split_ratio);
+    ExpandedSidebarLayout {
+        spaces: Rect::new(span.x, span.y, span.width, workspace_height),
+        agents: Rect::new(span.x, span.y + workspace_height, span.width, detail_height),
+        log: if log_height == 0 {
+            Rect::default()
+        } else {
+            Rect::new(content.x, span.bottom(), content.width, log_height)
+        },
+        split_span: span,
+        divider: if span.height < 6 {
+            Rect::default()
+        } else {
+            Rect::new(span.x, span.y + workspace_height, span.width, 1)
+        },
+    }
 }
 
 pub(crate) fn agent_panel_entries_from(
@@ -293,4 +321,42 @@ fn apply_token_style(mut style: Style, patch: crate::config::SidebarTokenStyle) 
         };
     }
     style
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layout_without_the_log_keeps_the_two_section_split() {
+        let layout = expanded_sidebar_layout(Rect::new(0, 0, 21, 30), 0.5, false);
+        assert_eq!(layout.spaces, Rect::new(0, 0, 20, 15));
+        assert_eq!(layout.agents, Rect::new(0, 15, 20, 15));
+        assert_eq!(layout.log, Rect::default());
+        assert_eq!(layout.split_span, Rect::new(0, 0, 20, 30));
+        assert_eq!(layout.divider, Rect::new(0, 15, 20, 1));
+    }
+
+    #[test]
+    fn layout_with_the_log_splits_into_thirds() {
+        let layout = expanded_sidebar_layout(Rect::new(0, 2, 21, 30), 0.5, true);
+        assert_eq!(layout.spaces, Rect::new(0, 2, 20, 10));
+        assert_eq!(layout.agents, Rect::new(0, 12, 20, 10));
+        assert_eq!(layout.log, Rect::new(0, 22, 20, 10));
+        assert_eq!(layout.split_span, Rect::new(0, 2, 20, 20));
+        assert_eq!(layout.divider, Rect::new(0, 12, 20, 1));
+
+        // A dragged split moves only the spaces/agents boundary.
+        let layout = expanded_sidebar_layout(Rect::new(0, 2, 21, 30), 0.7, true);
+        assert_eq!(layout.spaces.height, 14);
+        assert_eq!(layout.agents.height, 6);
+        assert_eq!(layout.log, Rect::new(0, 22, 20, 10));
+    }
+
+    #[test]
+    fn short_sidebars_hide_the_log() {
+        let layout = expanded_sidebar_layout(Rect::new(0, 0, 21, 11), 0.5, true);
+        assert_eq!(layout.log, Rect::default());
+        assert_eq!(layout.spaces.height + layout.agents.height, 11);
+    }
 }

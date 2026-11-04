@@ -261,6 +261,7 @@ mod keybindings_settings;
 mod link_hover;
 mod mobile;
 mod mouse_selection;
+mod notification_log;
 mod popup_focus_projection;
 mod scope_modes;
 mod startup_overlays;

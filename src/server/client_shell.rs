@@ -14,6 +14,19 @@ pub(super) fn snapshot(
     snapshot_with_completions(app, boot_id, revision, config_diagnostic, location).0
 }
 
+/// The notification log projection sent next to shell snapshots.
+pub(super) fn notification_log_projection(
+    app: &app::App,
+    boot_id: &str,
+) -> protocol::endpoint::EndpointNotificationLog {
+    let log = &app.state.notification_log;
+    protocol::endpoint::EndpointNotificationLog {
+        boot_id: boot_id.to_owned(),
+        revision: log.revision(),
+        entries: log.newest_first().cloned().collect(),
+    }
+}
+
 pub(super) fn snapshot_with_completions(
     app: &app::App,
     boot_id: &str,
@@ -759,6 +772,44 @@ mod tests {
                 notes.preview
             )),
             Some(("0.8.3", "### Changed\n- Client shell", true))
+        );
+    }
+
+    #[test]
+    fn notification_log_projection_lists_newest_first_with_the_log_revision() {
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = crate::app::App::new(
+            &crate::config::Config::default(),
+            crate::app::AppPolicy::TEST,
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        let empty = super::notification_log_projection(&app, "boot");
+        assert_eq!(empty.boot_id, "boot");
+        assert_eq!(empty.revision, 0);
+        assert!(empty.entries.is_empty());
+
+        for title in ["first", "second"] {
+            app.state.notification_log.add(
+                crate::app::notification_log::NewNotification {
+                    title: title.into(),
+                    body: None,
+                    workspace_id: None,
+                    source: None,
+                },
+                1,
+            );
+        }
+        let projection = super::notification_log_projection(&app, "boot");
+        assert_eq!(projection.revision, 2);
+        assert_eq!(
+            projection
+                .entries
+                .iter()
+                .map(|entry| entry.title.as_str())
+                .collect::<Vec<_>>(),
+            ["second", "first"]
         );
     }
 

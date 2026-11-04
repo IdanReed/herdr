@@ -211,10 +211,14 @@ pub(crate) fn render_sidebar(
     } else {
         Rect::new(area.right().saturating_sub(1), area.y, 1, area.height)
     };
-    let (workspace_area, detail_area) =
-        crate::ui::expanded_sidebar_sections(area, state.sidebar_section_split);
-    hits.sidebar_section_divider =
-        crate::ui::sidebar_section_divider_rect(area, state.sidebar_section_split);
+    let layout = crate::ui::expanded_sidebar_layout(
+        area,
+        state.sidebar_section_split,
+        config.notifications.enabled,
+    );
+    let (workspace_area, detail_area) = (layout.spaces, layout.agents);
+    hits.sidebar_section_divider = layout.divider;
+    hits.sidebar_section_span = layout.split_span;
     put_text(
         buffer,
         workspace_area.x,
@@ -438,6 +442,7 @@ pub(crate) fn render_sidebar(
         state.agent_scroll,
         hits,
     );
+    render_notification_log_section(buffer, layout.log, snapshot, config, state, hits);
 
     hits.sidebar_toggle = Rect::new(
         area.right().saturating_sub(2),
@@ -452,6 +457,37 @@ pub(crate) fn render_sidebar(
         hits.sidebar_toggle.width,
         "«",
         Style::default().fg(palette.overlay0),
+    );
+}
+
+/// Draws the active endpoint's notification log when the layout made room for it.
+pub(in crate::client::shell) fn render_notification_log_section(
+    buffer: &mut Buffer,
+    area: Rect,
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+    state: &mut ShellRenderState<'_>,
+    hits: &mut ShellHitMap,
+) {
+    if area.is_empty() {
+        return;
+    }
+    let entries = state
+        .endpoints
+        .iter()
+        .find(|endpoint| &endpoint.endpoint_id == state.active_endpoint_id)
+        .map_or(&[][..], |endpoint| {
+            crate::client::shell::notification_log::endpoint_entries(endpoint, snapshot)
+        });
+    crate::client::shell::notification_log::render_notification_log(
+        buffer,
+        area,
+        snapshot,
+        entries,
+        config,
+        state.notification_scroll,
+        state.selected_notification_id,
+        hits,
     );
 }
 

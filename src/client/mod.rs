@@ -2136,6 +2136,18 @@ async fn run_client_loop(
                                 }
                                 continue;
                             }
+                            // The server resends the snapshot with every log change, and
+                            // that snapshot repaints the sidebar.
+                            Ok(endpoint::EndpointControlMessage::NotificationLog(log)) => {
+                                if let Some(shell) = state.shell.as_mut() {
+                                    shell.set_endpoint_notification_log(
+                                        &endpoint_id,
+                                        Some(generation),
+                                        log,
+                                    );
+                                }
+                                continue;
+                            }
                             Ok(endpoint::EndpointControlMessage::Ignored) => {
                                 debug!(%kind, "ignoring unknown endpoint control message");
                                 continue;

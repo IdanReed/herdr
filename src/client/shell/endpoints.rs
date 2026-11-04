@@ -22,6 +22,11 @@ pub(crate) struct ClientShellEndpoint {
     pending_agent_view_projection: Option<ClientEndpointAgentViewProjection>,
     pub(crate) agent_view_projection_supported: bool,
     pub(crate) methods: Option<HashSet<String>>,
+    /// Latest notification log from this endpoint and the connection generation that sent it.
+    pub(crate) notification_log: Option<(
+        Option<u64>,
+        crate::protocol::endpoint::EndpointNotificationLog,
+    )>,
 }
 
 pub(super) struct MachineHit {
@@ -88,6 +93,7 @@ impl ClientShellState {
                 agent_view_projection_supported: previous
                     .is_some_and(|endpoint| endpoint.agent_view_projection_supported),
                 methods: previous.and_then(|endpoint| endpoint.methods.clone()),
+                notification_log: previous.and_then(|endpoint| endpoint.notification_log.clone()),
             });
         }
 
@@ -337,6 +343,35 @@ impl ClientShellState {
                 .agent_presentation
                 .receive_completions(Some(generation), projection);
         }
+    }
+
+    /// Keeps the newest log per endpoint. A new connection generation or server boot
+    /// replaces it; within one, an older revision never replaces a newer one.
+    pub(crate) fn set_endpoint_notification_log(
+        &mut self,
+        endpoint_id: &ClientEndpointId,
+        generation: Option<u64>,
+        log: crate::protocol::endpoint::EndpointNotificationLog,
+    ) {
+        let Some(endpoint) = self
+            .endpoints
+            .iter_mut()
+            .find(|endpoint| &endpoint.endpoint_id == endpoint_id)
+        else {
+            return;
+        };
+        if endpoint
+            .notification_log
+            .as_ref()
+            .is_some_and(|(current_generation, current)| {
+                *current_generation == generation
+                    && current.boot_id == log.boot_id
+                    && current.revision > log.revision
+            })
+        {
+            return;
+        }
+        endpoint.notification_log = Some((generation, log));
     }
 
     pub(crate) fn set_endpoint_agent_view_projection_for_generation(
@@ -742,5 +777,6 @@ pub(super) fn local_endpoint() -> ClientShellEndpoint {
         pending_agent_view_projection: None,
         agent_view_projection_supported: false,
         methods: None,
+        notification_log: None,
     }
 }

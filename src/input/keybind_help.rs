@@ -110,6 +110,10 @@ pub(crate) fn keybind_help_groups(
                     binding_label(&keybinds.agent_mode),
                     "agents mode: hjkl focus",
                 ),
+                entry(
+                    binding_label(&keybinds.notification_mode),
+                    "notifications mode: j/k open, x dismiss",
+                ),
             ],
         ),
         (
