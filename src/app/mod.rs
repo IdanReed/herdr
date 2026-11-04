@@ -19,6 +19,7 @@ mod creation;
 mod custom_commands;
 mod git_refresh;
 mod ids;
+pub(crate) mod notification_log;
 mod popup;
 mod runtime;
 mod session;
@@ -528,6 +529,7 @@ impl App {
             update_dismissed: false,
             config_diagnostic,
             toast: None,
+            notification_log: Default::default(),
             pending_agent_notifications: std::collections::HashMap::new(),
             outer_terminal_focus: None,
             prefix_keys,

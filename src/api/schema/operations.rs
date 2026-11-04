@@ -205,6 +205,9 @@ mod tests {
             "plugin.pane.open",
             "plugin.pane.focus",
             "plugin.pane.close",
+            "notification.add",
+            "notification.dismiss",
+            "notification.mark_read",
         ]
         .into_iter()
         .collect::<BTreeSet<_>>();

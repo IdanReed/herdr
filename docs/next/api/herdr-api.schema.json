@@ -2354,6 +2354,55 @@
           ],
           "type": "object"
         },
+        "NotificationAddParams": {
+          "properties": {
+            "body": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "description": "Free-text tag naming the poster, used to dismiss its entries together.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "description": "Workspace the entry opens. Accepts the same ids as `workspace.get`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "type": "object"
+        },
+        "NotificationSelectParams": {
+          "description": "Selects log entries by id, by source, or both. With neither, it selects every entry.",
+          "properties": {
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
         "NotificationShowParams": {
           "properties": {
             "body": {
@@ -6312,6 +6361,70 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "notification.add",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/NotificationAddParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "notification.list",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/EmptyParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "notification.dismiss",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/NotificationSelectParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "notification.mark_read",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/NotificationSelectParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -7773,6 +7886,52 @@
               "type": "object"
             }
           ]
+        },
+        "NotificationLogEntry": {
+          "description": "One notification log entry.",
+          "properties": {
+            "body": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "created_unix_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "id": {
+              "description": "Server-assigned id, unique within one server run.",
+              "type": "string"
+            },
+            "read": {
+              "default": false,
+              "type": "boolean"
+            },
+            "source": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "workspace_id": {
+              "description": "Canonical id of the linked workspace. The workspace may have closed since.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "created_unix_ms"
+          ],
+          "type": "object"
         },
         "NotificationShowReason": {
           "enum": [
@@ -9986,6 +10145,78 @@
                 "type",
                 "shown",
                 "reason"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "notification": {
+                  "$ref": "#/schemas/success_response/$defs/NotificationLogEntry"
+                },
+                "type": {
+                  "const": "notification_added",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "notification"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Log entries, newest first.",
+              "properties": {
+                "notifications": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/NotificationLogEntry"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "const": "notification_list",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "notifications"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "removed": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "notification_dismissed",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "removed"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "marked": {
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": {
+                  "const": "notification_marked_read",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "marked"
               ],
               "type": "object"
             },

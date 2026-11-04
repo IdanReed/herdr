@@ -152,9 +152,21 @@ herdr server reload-agent-manifests
 
 ```bash
 herdr notification show <title> [--body TEXT] [--position top-left|top-right|bottom-left|bottom-right] [--sound none|done|request]
+herdr notification add <title> [--body TEXT] [--workspace WORKSPACE_ID] [--source SOURCE]
+herdr notification list
+herdr notification dismiss [--id ID] [--source SOURCE]
+herdr notification mark-read [--id ID] [--source SOURCE]
 ```
 
 `notification show` uses the configured `[ui.toast]` delivery. `--position` only affects in-app Herdr toasts. `--sound` defaults to `none`; `done` and `request` play the existing finished and needs-attention sounds only when the notification is shown.
+
+The other commands manage the notification log, which keeps entries until they are dismissed. `notification add` posts an entry and prints it with its server-assigned `id`. `--workspace` links the entry to a workspace and accepts the same workspace ids as other commands. `--source` tags the entry with the name of the script or tool that posted it. `notification list` prints the entries, newest first. `notification dismiss` and `notification mark-read` select entries by `--id`, by `--source`, or by both; with neither they act on every entry. They print the number of entries they changed, and an id that no longer exists is not an error. A script that runs jobs can post progress and clear its own entries:
+
+```bash
+herdr notification add "started tests" --workspace w2 --source jobs
+herdr notification add "tests passed" --body "412 passed" --workspace w2 --source jobs
+herdr notification dismiss --source jobs
+```
 
 ## Sessions
 

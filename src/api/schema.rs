@@ -5,6 +5,7 @@ pub mod commands;
 pub mod common;
 pub mod events;
 pub mod integrations;
+pub mod notifications;
 pub(crate) mod operations;
 pub mod panes;
 pub mod plugins;
@@ -20,6 +21,7 @@ pub use commands::*;
 pub use common::*;
 pub use events::*;
 pub use integrations::*;
+pub use notifications::*;
 pub use panes::*;
 pub use plugins::*;
 pub use response::*;
@@ -145,6 +147,10 @@ operations::define_operations! {
     PluginPaneOpen(PluginPaneOpenParams) => "plugin.pane.open", true, false;
     PluginPaneFocus(PluginPaneFocusParams) => "plugin.pane.focus", true, false;
     PluginPaneClose(PluginPaneCloseParams) => "plugin.pane.close", true, false;
+    NotificationAdd(NotificationAddParams) => "notification.add", true, false;
+    NotificationList(EmptyParams) => "notification.list", false, false;
+    NotificationDismiss(NotificationSelectParams) => "notification.dismiss", true, true;
+    NotificationMarkRead(NotificationSelectParams) => "notification.mark_read", true, true;
 }
 
 #[cfg(test)]

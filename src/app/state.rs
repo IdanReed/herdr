@@ -817,6 +817,8 @@ pub struct AppState {
     pub update_dismissed: bool,
     pub config_diagnostic: Option<String>,
     pub toast: Option<ToastNotification>,
+    /// Entries posted with `notification.add`, kept until dismissed or pushed out.
+    pub(crate) notification_log: crate::app::notification_log::NotificationLog,
     pub pending_agent_notifications: std::collections::HashMap<PaneId, PendingAgentNotification>,
     /// Last reported focus state for the outer terminal hosting herdr.
     /// None means unsupported or not yet reported, which preserves active-pane suppression.
@@ -1061,6 +1063,7 @@ impl AppState {
             update_dismissed: false,
             config_diagnostic: None,
             toast: None,
+            notification_log: Default::default(),
             pending_agent_notifications: std::collections::HashMap::new(),
             outer_terminal_focus: None,
             prefix_keys: vec![(KeyCode::Char('b'), KeyModifiers::CONTROL)],

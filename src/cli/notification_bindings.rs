@@ -1,18 +1,68 @@
 use clap::Command;
 
 use crate::api::schema::common::NotificationShowProjection;
-use crate::api::schema::{Method, Request};
+use crate::api::schema::notifications::{NotificationAddProjection, NotificationSelectProjection};
+use crate::api::schema::{EmptyParams, Method, Request};
 
-use super::super::projection::{self, ParseError};
+use super::super::projection::{self, cli_projection, Leaf, ParseError};
+
+cli_projection! {
+    pub(crate) NotificationListProjection for EmptyParams {}
+}
+
+const LEAVES: [Leaf; 5] = [
+    Leaf {
+        name: "show",
+        about: "Show a notification",
+        id: "cli:notification:show",
+        arguments: NotificationShowProjection::arguments,
+        method: |matches| {
+            NotificationShowProjection::from_matches(matches).map(Method::NotificationShow)
+        },
+    },
+    Leaf {
+        name: "add",
+        about: "Add an entry to the notification log",
+        id: "cli:notification:add",
+        arguments: NotificationAddProjection::arguments,
+        method: |matches| {
+            NotificationAddProjection::from_matches(matches).map(Method::NotificationAdd)
+        },
+    },
+    Leaf {
+        name: "list",
+        about: "List notification log entries, newest first",
+        id: "cli:notification:list",
+        arguments: NotificationListProjection::arguments,
+        method: |matches| {
+            NotificationListProjection::from_matches(matches).map(Method::NotificationList)
+        },
+    },
+    Leaf {
+        name: "dismiss",
+        about: "Remove log entries by id or source, or all entries",
+        id: "cli:notification:dismiss",
+        arguments: NotificationSelectProjection::arguments,
+        method: |matches| {
+            NotificationSelectProjection::from_matches(matches).map(Method::NotificationDismiss)
+        },
+    },
+    Leaf {
+        name: "mark-read",
+        about: "Mark log entries read by id or source, or all entries",
+        id: "cli:notification:mark-read",
+        arguments: NotificationSelectProjection::arguments,
+        method: |matches| {
+            NotificationSelectProjection::from_matches(matches).map(Method::NotificationMarkRead)
+        },
+    },
+];
 
 pub(crate) fn command() -> Command {
     Command::new("notification")
-        .about("Show Herdr notifications")
+        .about("Show Herdr notifications and manage the notification log")
         .subcommand_required(true)
-        .subcommand(
-            projection::command("show", NotificationShowProjection::arguments())
-                .about("Show a notification"),
-        )
+        .subcommands(LEAVES.iter().map(Leaf::command))
 }
 
 pub(crate) fn request(args: &[String]) -> Result<Request, ParseError> {
@@ -26,15 +76,7 @@ pub(crate) fn request(args: &[String]) -> Result<Request, ParseError> {
         }
         _ => args,
     };
-    projection::parse(command().bin_name("herdr notification"), args, |matches| {
-        let matches = matches
-            .subcommand_matches("show")
-            .ok_or_else(|| ParseError::Usage("missing notification show command".into()))?;
-        Ok(Request {
-            id: "cli:notification:show".into(),
-            method: Method::NotificationShow(NotificationShowProjection::from_matches(matches)?),
-        })
-    })
+    projection::group_request(command(), &LEAVES, args)
 }
 
 #[cfg(test)]
@@ -116,9 +158,69 @@ mod tests {
         assert!(
             matches!(parse(&["show", "title", "--help"]), Err(ParseError::Clap(error)) if error.exit_code() == 0)
         );
+        assert!(
+            matches!(parse(&["show", "help"]), Err(ParseError::Clap(error)) if error.exit_code() == 0)
+        );
         assert_eq!(
             serde_json::to_value(parse(&["show", "title", "--sound=request"]).unwrap()).unwrap(),
             serde_json::json!({"id":"cli:notification:show", "method":"notification.show", "params":{"title":"title", "sound":"request"}})
         );
+    }
+
+    #[test]
+    fn notification_log_commands_build_their_requests() {
+        for (args, expected) in [
+            (
+                vec!["add", "--literal-title"],
+                serde_json::json!({"id":"cli:notification:add", "method":"notification.add", "params":{"title":"--literal-title"}}),
+            ),
+            (
+                vec![
+                    "add",
+                    "finished build",
+                    "--body",
+                    "exit 0",
+                    "--workspace",
+                    "w2",
+                    "--source",
+                    "jobs",
+                ],
+                serde_json::json!({"id":"cli:notification:add", "method":"notification.add", "params":{"title":"finished build", "body":"exit 0", "workspace_id":"w2", "source":"jobs"}}),
+            ),
+            (
+                vec!["list"],
+                serde_json::json!({"id":"cli:notification:list", "method":"notification.list", "params":{}}),
+            ),
+            (
+                vec!["dismiss"],
+                serde_json::json!({"id":"cli:notification:dismiss", "method":"notification.dismiss", "params":{}}),
+            ),
+            (
+                vec!["dismiss", "--id", "n3", "--source", "jobs"],
+                serde_json::json!({"id":"cli:notification:dismiss", "method":"notification.dismiss", "params":{"id":"n3", "source":"jobs"}}),
+            ),
+            (
+                vec!["mark-read", "--source", "jobs"],
+                serde_json::json!({"id":"cli:notification:mark-read", "method":"notification.mark_read", "params":{"source":"jobs"}}),
+            ),
+        ] {
+            assert_eq!(
+                serde_json::to_value(parse(&args).unwrap()).unwrap(),
+                expected,
+                "{args:?}"
+            );
+        }
+        for args in [
+            vec!["add"],
+            vec!["add", "title", "extra"],
+            vec!["list", "extra"],
+            vec!["dismiss", "n3"],
+            vec!["mark-read", "--id"],
+        ] {
+            assert!(
+                matches!(parse(&args), Err(ParseError::Clap(error)) if error.exit_code() == 2),
+                "{args:?}"
+            );
+        }
     }
 }

@@ -6,6 +6,7 @@ use super::events::EventEnvelope;
 use super::integrations::{
     IntegrationInstallResult, IntegrationTarget, IntegrationUninstallResult,
 };
+use super::notifications::NotificationLogEntry;
 use super::panes::{
     LayoutDescription, PaneEdgesResult, PaneFocusDirectionResult, PaneInfo, PaneLayoutSnapshot,
     PaneMoveResult, PaneNeighborResult, PaneProcessInfo, PaneReadResult, PaneResizeResult,
@@ -197,6 +198,19 @@ pub enum ResponseResult {
     NotificationShow {
         shown: bool,
         reason: NotificationShowReason,
+    },
+    NotificationAdded {
+        notification: NotificationLogEntry,
+    },
+    /// Log entries, newest first.
+    NotificationList {
+        notifications: Vec<NotificationLogEntry>,
+    },
+    NotificationDismissed {
+        removed: usize,
+    },
+    NotificationMarkedRead {
+        marked: usize,
     },
     ClientWindowTitle {
         changed: bool,

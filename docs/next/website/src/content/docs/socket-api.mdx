@@ -97,7 +97,7 @@ Raw socket method names use dot notation:
 | Area | Methods |
 | --- | --- |
 | Server | `ping`, `server.stop`, `server.reload_config`, `server.agent_manifests`, `server.reload_agent_manifests` |
-| Notification | `notification.show` |
+| Notification | `notification.show`, `notification.add`, `notification.list`, `notification.dismiss`, `notification.mark_read` |
 | Client | `client.window_title.set`, `client.window_title.clear` |
 | Session | `session.snapshot` |
 | Workspace | `workspace.create`, `workspace.list`, `workspace.get`, `workspace.focus`, `workspace.rename`, `workspace.move`, `workspace.move_block`, `workspace.report_metadata`, `workspace.close` |
@@ -335,6 +335,57 @@ The response reports whether anything was shown:
 ```
 
 Possible reasons are `shown`, `disabled`, `rate_limited`, `no_foreground_client`, and `busy`. `disabled` means `ui.toast.delivery = "off"`. `busy` means an existing in-app toast was not replaced. Terminal and system delivery are best-effort through the current foreground attached Herdr client.
+
+The notification log keeps short entries until they are dismissed. Scripts post
+entries, and attached clients list them in the sidebar when
+`ui.sidebar.notifications.enabled = true`. The server holds the log for the
+session. It keeps the newest 100 entries, drops the oldest when a new entry
+arrives, and starts empty when the server restarts. `notification.show` and its
+toasts are separate and do not add log entries.
+
+Add an entry:
+
+```json
+{"id":"req_log_add","method":"notification.add","params":{"title":"tests passed","body":"412 passed","workspace_id":"w2","source":"jobs"}}
+```
+
+`title` is required. `body`, `workspace_id`, and `source` are optional. Herdr
+cleans `title`, `body`, and `source` the same way as `notification.show`, with
+limits of 80, 240, and 80 characters. An empty `title` or `source` returns
+`invalid_params`. `workspace_id` accepts the same workspace ids as
+`workspace.get` and is stored as the workspace's canonical id. An unknown
+workspace returns `workspace_not_found`. The entry stays in the log after its
+workspace closes.
+
+The response contains the new entry with its server-assigned `id`:
+
+```json
+{"id":"req_log_add","result":{"type":"notification_added","notification":{"id":"n4","title":"tests passed","body":"412 passed","workspace_id":"w2","source":"jobs","created_unix_ms":1767225600000,"read":false}}}
+```
+
+`notification.list` takes empty params and returns the entries, newest first:
+
+```json
+{"id":"req_log_list","method":"notification.list","params":{}}
+{"id":"req_log_list","result":{"type":"notification_list","notifications":[{"id":"n4","title":"tests passed","workspace_id":"w2","source":"jobs","created_unix_ms":1767225600000,"read":false}]}}
+```
+
+`notification.dismiss` removes entries and `notification.mark_read` marks them
+read. Both take an optional `id` and an optional `source`. An entry is selected
+when it matches every field that is given, so empty params select every entry:
+
+```json
+{"id":"req_log_dismiss","method":"notification.dismiss","params":{"source":"jobs"}}
+{"id":"req_log_dismiss","result":{"type":"notification_dismissed","removed":2}}
+{"id":"req_log_read","method":"notification.mark_read","params":{"id":"n4"}}
+{"id":"req_log_read","result":{"type":"notification_marked_read","marked":1}}
+```
+
+`removed` and `marked` count the entries that changed. Selecting nothing is not
+an error, so two clients can dismiss the same entry. Ids are unique within one
+server run and are not reused when old entries drop out. The TUI uses
+`notification.mark_read` when the user opens an entry and `notification.dismiss`
+when the user dismisses one.
 
 Set or clear the foreground client's outer terminal window title:
 

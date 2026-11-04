@@ -5,6 +5,7 @@ mod agents;
 mod env;
 mod integrations;
 mod layouts;
+mod notifications;
 mod panes;
 pub(crate) mod plugins;
 pub(super) mod responses;
@@ -1011,6 +1012,16 @@ impl App {
             }
             Method::NotificationShow(params) => {
                 return self.handle_notification_show(request.id, params);
+            }
+            Method::NotificationAdd(params) => {
+                return self.handle_notification_add(request.id, params);
+            }
+            Method::NotificationList(_) => return self.handle_notification_list(request.id),
+            Method::NotificationDismiss(params) => {
+                return self.handle_notification_dismiss(request.id, params);
+            }
+            Method::NotificationMarkRead(params) => {
+                return self.handle_notification_mark_read(request.id, params);
             }
             Method::ReleaseNotesDismiss(params) => {
                 let Some(notes) = self.state.latest_release_notes.as_ref() else {
