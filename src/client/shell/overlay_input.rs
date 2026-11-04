@@ -893,9 +893,12 @@ impl ClientShellState {
                 self.accept_close_confirmation(outcome);
             } else if key.code == KeyCode::Esc {
                 self.overlay = None;
-                self.mode = ClientShellMode::Navigate;
-                self.navigate_workspace_id = self.focused_navigation_target();
-                self.reveal_navigation_workspace = true;
+                // A mode that asked to close something stays open after a cancel.
+                if !matches!(self.mode, ClientShellMode::Scope(_)) {
+                    self.mode = ClientShellMode::Navigate;
+                    self.navigate_workspace_id = self.focused_navigation_target();
+                    self.reveal_navigation_workspace = true;
+                }
                 outcome.repaint = true;
             }
             return;

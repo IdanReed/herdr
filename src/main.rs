@@ -195,11 +195,12 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 
 # Modes stay open until esc, enter, or their key again. In every mode h/j/k/l or
 # the arrows move focus and shift+movement moves the focused item.
-# Creating an item (pane mode d/r, spaces mode n) returns to the terminal.
+# Creating an item (pane mode d/v, spaces mode n) returns to the terminal.
+# In pane and spaces modes, r renames and x closes the focused pane or workspace.
 # Set a mode to "" to free its key for the terminal.
-# pane_mode = "ctrl+p"       # d/r split down/right
+# pane_mode = "ctrl+p"       # d/v split down/right, r rename, x close
 # tab_mode = "ctrl+t"
-# workspace_mode = "ctrl+s"  # n new workspace
+# workspace_mode = "ctrl+s"  # n new workspace, r rename, x close
 # agent_mode = "ctrl+a"      # movement only
 # notification_mode = ""     # j/k open log entries, x dismiss; needs ui.sidebar.notifications
 

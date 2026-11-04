@@ -3,6 +3,7 @@
 //! Each mode stays open so movement keys can repeat: h/j/k/l or the arrows
 //! move focus and the shifted keys move the focused item. Creating an item
 //! returns to the terminal so the new item can take input right away.
+//! Renaming or closing keeps the mode open, so `x` can close several items.
 
 use super::*;
 use crate::config::terminal_key_matches_combo;
@@ -80,7 +81,9 @@ impl ScopeMode {
                 ("hjkl ←↓↑→", "focus"),
                 ("HJKL", "move"),
                 ("d", "split down"),
-                ("r", "split right"),
+                ("v", "split right"),
+                ("r", "rename"),
+                ("x", "close"),
                 ("esc", "done"),
             ],
             Self::Tab => &[("h/l ←/→", "focus"), ("H/L", "move"), ("esc", "done")],
@@ -88,6 +91,8 @@ impl ScopeMode {
                 ("j/k ↑/↓", "focus"),
                 ("J/K", "move"),
                 ("n", "new"),
+                ("r", "rename"),
+                ("x", "close"),
                 ("esc", "done"),
             ],
             Self::Agent => &[("j/k ↑/↓", "focus"), ("esc", "done")],
@@ -115,15 +120,19 @@ impl ScopeMode {
         })
     }
 
-    /// The item key that creates something, which also closes the mode.
-    fn create_action(self, key: &TerminalKey) -> Option<KeybindAction> {
-        let plain = |character| {
-            terminal_key_matches_combo(key, (KeyCode::Char(character), KeyModifiers::empty()))
-        };
+    /// The action for an item key, and whether it returns to the terminal.
+    /// Creating returns so the new item takes input. Renaming and closing reuse
+    /// the normal actions, with their dialogs, and keep the mode open.
+    fn item_action(self, key: &TerminalKey) -> Option<(KeybindAction, bool)> {
+        let plain = |character| plain_key(key, character);
         match self {
-            Self::Pane if plain('d') => Some(KeybindAction::SplitHorizontal),
-            Self::Pane if plain('r') => Some(KeybindAction::SplitVertical),
-            Self::Workspace if plain('n') => Some(KeybindAction::NewWorkspace),
+            Self::Pane if plain('d') => Some((KeybindAction::SplitHorizontal, true)),
+            Self::Pane if plain('v') => Some((KeybindAction::SplitVertical, true)),
+            Self::Pane if plain('r') => Some((KeybindAction::RenamePane, false)),
+            Self::Pane if plain('x') => Some((KeybindAction::ClosePane, false)),
+            Self::Workspace if plain('n') => Some((KeybindAction::NewWorkspace, true)),
+            Self::Workspace if plain('r') => Some((KeybindAction::RenameWorkspace, false)),
+            Self::Workspace if plain('x') => Some((KeybindAction::CloseWorkspace, false)),
             _ => None,
         }
     }
@@ -219,8 +228,10 @@ impl ClientShellState {
             return;
         }
 
-        if let Some(action) = scope.create_action(key) {
-            self.mode = self.copy_or_terminal_mode();
+        if let Some((action, exits)) = scope.item_action(key) {
+            if exits {
+                self.mode = self.copy_or_terminal_mode();
+            }
             self.record_binding(KeybindMatch::Action(action), outcome);
             outcome.repaint = true;
             return;

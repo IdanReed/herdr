@@ -96,7 +96,7 @@ pub(crate) fn keybind_help_groups(
             vec![
                 entry(
                     binding_label(&keybinds.pane_mode),
-                    "pane mode: hjkl focus, HJKL move, d/r split down/right",
+                    "pane mode: hjkl focus, HJKL move, d/v split down/right, r rename, x close",
                 ),
                 entry(
                     binding_label(&keybinds.tab_mode),
@@ -104,7 +104,7 @@ pub(crate) fn keybind_help_groups(
                 ),
                 entry(
                     binding_label(&keybinds.workspace_mode),
-                    "spaces mode: hjkl focus, HJKL move, n new",
+                    "spaces mode: hjkl focus, HJKL move, n new, r rename, x close",
                 ),
                 entry(
                     binding_label(&keybinds.agent_mode),

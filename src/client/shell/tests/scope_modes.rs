@@ -131,7 +131,7 @@ fn mode_keys_open_switch_and_close_modes_without_reaching_the_pane() {
 
     // Unbound keys stay in the mode instead of typing into the pane.
     state.handle_input_bytes(&[CTRL_S]);
-    let ignored = state.handle_input_bytes(b"x");
+    let ignored = state.handle_input_bytes(b"z");
     assert!(ignored.requests.is_empty() && ignored.actions.is_empty());
     assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Workspace));
 
@@ -199,12 +199,114 @@ fn pane_mode_moves_focus_and_panes_and_closes_after_a_split() {
     assert_eq!(state.mode, ClientShellMode::Terminal);
 
     state.handle_input_bytes(&[CTRL_P]);
-    let right = state.handle_input_bytes(b"r");
+    let right = state.handle_input_bytes(b"v");
     assert!(matches!(
         method(&right),
         Method::PaneSplit(params) if params.direction == SplitDirection::Right && params.focus
     ));
     assert_eq!(state.mode, ClientShellMode::Terminal);
+}
+
+#[test]
+fn pane_mode_renames_and_closes_the_focused_pane_and_stays_open() {
+    // Two panes in one tab, so closing one needs no confirmation.
+    let mut state = shell(snapshot_with_agents());
+    state.handle_input_bytes(&[CTRL_P]);
+
+    let rename = state.handle_input_bytes(b"r");
+    assert!(rename.actions.is_empty() && rename.requests.is_empty());
+    assert!(matches!(
+        state.overlay.as_ref(),
+        Some(ClientShellOverlay::Rename(ClientRenameOverlay {
+            target: ClientRenameTarget::Pane { pane_id },
+            ..
+        })) if pane_id == "pane_1"
+    ));
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Pane));
+    // The dialog owns the keys until it closes, then the mode is still open.
+    state.handle_input_bytes(b"x");
+    state.handle_input_bytes(b"\x1b");
+    assert!(state.overlay.is_none());
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Pane));
+
+    let close = state.handle_input_bytes(b"x");
+    assert!(matches!(
+        method(&close),
+        Method::PaneClose(target) if target.pane_id == "pane_1"
+    ));
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Pane));
+}
+
+#[test]
+fn pane_mode_close_keeps_the_last_pane_confirmation() {
+    let mut state = shell(snapshot());
+    state.handle_input_bytes(&[CTRL_P]);
+
+    let close = state.handle_input_bytes(b"x");
+    assert!(close.actions.is_empty(), "{:?}", close.actions);
+    assert!(matches!(
+        state.overlay.as_ref(),
+        Some(ClientShellOverlay::ConfirmClose(_))
+    ));
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Pane));
+}
+
+#[test]
+fn spaces_mode_renames_and_closes_the_focused_workspace() {
+    let mut state = shell(snapshot_with_workspaces());
+    state.handle_input_bytes(&[CTRL_S]);
+
+    state.handle_input_bytes(b"r");
+    assert!(matches!(
+        state.overlay.as_ref(),
+        Some(ClientShellOverlay::Rename(ClientRenameOverlay {
+            target: ClientRenameTarget::Workspace { workspace_id },
+            ..
+        })) if workspace_id == "ws_1"
+    ));
+    state.handle_input_bytes(b"\x15renamed\r");
+    assert!(state.overlay.is_none());
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Workspace));
+
+    // Closing asks first, as the keybinding does. Cancelling keeps the mode open.
+    state.handle_input_bytes(b"x");
+    assert!(matches!(
+        state.overlay.as_ref(),
+        Some(ClientShellOverlay::ConfirmClose(_))
+    ));
+    state.handle_input_bytes(b"\x1b");
+    assert!(state.overlay.is_none());
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Workspace));
+
+    let close = state.handle_input_bytes(b"x");
+    assert!(close.actions.is_empty());
+    assert!(matches!(
+        state.overlay.as_ref(),
+        Some(ClientShellOverlay::ConfirmClose(ClientConfirmCloseOverlay {
+            workspace_id,
+            ..
+        })) if workspace_id == "ws_1"
+    ));
+    let confirm = state.handle_input_bytes(b"\r");
+    assert!(matches!(
+        method(&confirm),
+        Method::WorkspaceClose(params) if params.workspace_id == "ws_1"
+    ));
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Workspace));
+}
+
+#[test]
+fn spaces_mode_close_skips_the_dialog_when_confirmation_is_off() {
+    let config = toml::from_str::<Config>("[ui]\nconfirm_close = false\n").expect("config");
+    let mut state = shell_with_config(snapshot_with_workspaces(), &config);
+    state.handle_input_bytes(&[CTRL_S]);
+
+    let close = state.handle_input_bytes(b"x");
+    assert!(matches!(
+        method(&close),
+        Method::WorkspaceClose(params) if params.workspace_id == "ws_1"
+    ));
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Workspace));
 }
 
 #[test]
@@ -297,7 +399,7 @@ fn agents_mode_only_moves_focus() {
         );
     }
 
-    for input in [&b"J"[..], b"\x1b[1;2B", b"d", b"n"] {
+    for input in [&b"J"[..], b"\x1b[1;2B", b"d", b"n", b"r", b"x"] {
         let outcome = state.handle_input_bytes(input);
         assert!(outcome.actions.is_empty(), "{input:?}");
         assert!(outcome.requests.is_empty(), "{input:?}");
@@ -317,14 +419,24 @@ fn mode_bar_shows_each_modes_hotkeys() {
                 "hjkl ←↓↑→ focus",
                 "HJKL move",
                 "d split down",
-                "r split right",
+                "v split right",
+                "r rename",
+                "x close",
                 "esc done",
             ][..],
         ),
         (CTRL_T, &["TAB", "h/l ←/→ focus", "H/L move", "esc done"]),
         (
             CTRL_S,
-            &["SPACES", "j/k ↑/↓ focus", "J/K move", "n new", "esc done"],
+            &[
+                "SPACES",
+                "j/k ↑/↓ focus",
+                "J/K move",
+                "n new",
+                "r rename",
+                "x close",
+                "esc done",
+            ],
         ),
         (CTRL_A, &["AGENTS", "j/k ↑/↓ focus", "esc done"]),
     ] {

@@ -845,7 +845,7 @@
           "key": "keys.pane_mode",
           "type": "keybinding",
           "default": "\"ctrl+p\"",
-          "description": "Enter pane mode: h/j/k/l or arrows move focus, Shift moves the pane, d/r split down/right. Set to \"\" to send the key to the pane."
+          "description": "Enter pane mode: h/j/k/l or arrows move focus, Shift moves the pane, d/v split down/right, r renames, and x closes the focused pane. Set to \"\" to send the key to the pane."
         },
         {
           "key": "keys.tab_mode",
@@ -857,7 +857,7 @@
           "key": "keys.workspace_mode",
           "type": "keybinding",
           "default": "\"ctrl+s\"",
-          "description": "Enter spaces mode: h/j/k/l or arrows move focus between workspaces, Shift moves the workspace, n creates one. Set to \"\" to send the key to the pane."
+          "description": "Enter spaces mode: h/j/k/l or arrows move focus between workspaces, Shift moves the workspace, n creates one, r renames, and x closes the focused workspace. Set to \"\" to send the key to the pane."
         },
         {
           "key": "keys.agent_mode",
