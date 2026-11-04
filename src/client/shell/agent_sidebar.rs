@@ -77,6 +77,10 @@ pub(super) fn agent_list_position<T>(
     )
 }
 
+/// Extra blank rows above every space heading except the first, so each space
+/// reads as its own group.
+pub(super) const SPACE_HEADING_GAP: u16 = 1;
+
 /// Terminal rows each list item takes, and the blank rows after it.
 pub(super) fn agent_list_heights<T>(
     items: &[AgentListItem<T>],
@@ -96,6 +100,11 @@ pub(super) fn agent_list_heights<T>(
         .map(|(index, item)| match item {
             _ if index + 1 == items.len() => 0,
             AgentListItem::Heading { .. } => 0,
+            AgentListItem::Agent(_)
+                if matches!(items.get(index + 1), Some(AgentListItem::Heading { .. })) =>
+            {
+                row_gap.saturating_add(SPACE_HEADING_GAP)
+            }
             AgentListItem::Agent(_) => row_gap,
         })
         .collect();

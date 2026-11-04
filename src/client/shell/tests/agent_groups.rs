@@ -123,7 +123,10 @@ fn agents_appear_under_a_heading_for_their_space() {
     let beta = position(&|row| is_heading(row, "beta"));
     let third = agent_row("pane_3");
     assert!(alpha < first && first < second && second < beta && beta < third);
-    assert_eq!(beta, second + 1, "{rows:#?}");
+    // The first heading starts the list; later headings get a blank row above.
+    assert_eq!(alpha, 0, "{rows:#?}");
+    assert_eq!(beta, second + 2, "{rows:#?}");
+    assert!(rows[second + 1].is_empty(), "{rows:#?}");
 
     // One indented line per agent that names the tab, not the agent or space.
     for index in [first, second, third] {
@@ -153,6 +156,75 @@ fn agents_appear_under_a_heading_for_their_space() {
         .agents
         .iter()
         .all(|(rect, _)| rect.y != body.y + alpha as u16 && rect.y != body.y + beta as u16));
+}
+
+#[test]
+fn heading_spacing_adds_to_the_configured_row_gap() {
+    let mut config = grouped_config();
+    config.ui.sidebar.agents.row_gap = 1;
+    let mut state = shell(grouped_snapshot(2), &config);
+    let rows = agent_body_rows(&mut state, 30);
+    let second = agent_row_index(&state, "pane_2").expect("second agent row");
+    let beta = rows
+        .iter()
+        .position(|row| is_heading(row, "beta"))
+        .unwrap_or_else(|| panic!("{rows:#?}"));
+    assert_eq!(
+        agent_row_index(&state, "pane_1").map(|first| second - first),
+        Some(2),
+        "{rows:#?}"
+    );
+    assert_eq!(beta, second + 3, "{rows:#?}");
+    assert!(
+        rows[second + 1..beta].iter().all(String::is_empty),
+        "{rows:#?}"
+    );
+
+    let items = super::super::agent_sidebar::agent_list_items(
+        state.snapshot.as_deref().unwrap(),
+        &state.config,
+    );
+    let (heights, gaps) =
+        super::super::agent_sidebar::agent_list_heights(&items, 1, |row| row.rows.len());
+    assert_eq!(heights.len(), gaps.len());
+    // heading alpha, pane_1, pane_2, heading beta, pane_3
+    assert_eq!(gaps, [0, 1, 2, 0, 0]);
+}
+
+#[test]
+fn clicking_below_a_heading_gap_hits_the_right_agent() {
+    let mut state = shell(grouped_snapshot(2), &grouped_config());
+    let rows = agent_body_rows(&mut state, 30);
+    let body = state.hits.agent_body;
+    let beta = rows
+        .iter()
+        .position(|row| is_heading(row, "beta"))
+        .unwrap_or_else(|| panic!("{rows:#?}"));
+    let click = |state: &mut ClientShellState, row: usize| {
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: body.x + 2,
+            row: body.y + row as u16,
+            modifiers: KeyModifiers::empty(),
+        })])
+    };
+    let focused_pane = |outcome: &ClientShellInput| {
+        outcome.actions.iter().find_map(|action| match action {
+            ClientShellAction::Endpoint { request, .. } => match &request.method {
+                crate::api::schema::Method::PaneFocus(target) => Some(target.pane_id.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+    };
+
+    // The blank row and the heading are not agents.
+    assert_eq!(focused_pane(&click(&mut state, beta - 1)), None);
+    assert_eq!(focused_pane(&click(&mut state, beta)), None);
+    assert_eq!(
+        focused_pane(&click(&mut state, beta + 1)).as_deref(),
+        Some("pane_3")
+    );
 }
 
 #[test]
