@@ -797,6 +797,7 @@ mod tests {
                     body: None,
                     workspace_id: None,
                     source: None,
+                    action: None,
                 },
                 1,
             );

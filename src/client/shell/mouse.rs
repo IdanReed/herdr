@@ -2091,7 +2091,7 @@ impl ClientShellState {
                     .find(|hit| super::contains(hit.rect, point))
                     .map(|hit| hit.id.clone());
                 if let Some(id) = notification_id {
-                    self.open_notification(&id, outcome);
+                    self.click_notification(&id, outcome);
                     return;
                 }
                 if super::contains(self.hits.agent_sort_toggle, point) {

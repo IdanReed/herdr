@@ -112,7 +112,7 @@ pub(crate) fn keybind_help_groups(
                 ),
                 entry(
                     binding_label(&keybinds.notification_mode),
-                    "notifications mode: j/k open, x dismiss",
+                    "notifications mode: j/k open, a accept, x dismiss",
                 ),
             ],
         ),

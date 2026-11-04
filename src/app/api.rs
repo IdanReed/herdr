@@ -1023,6 +1023,9 @@ impl App {
             Method::NotificationMarkRead(params) => {
                 return self.handle_notification_mark_read(request.id, params);
             }
+            Method::NotificationAccept(params) => {
+                return self.handle_notification_accept(request.id, params);
+            }
             Method::ReleaseNotesDismiss(params) => {
                 let Some(notes) = self.state.latest_release_notes.as_ref() else {
                     return responses::encode_error(

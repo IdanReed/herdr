@@ -151,6 +151,7 @@ operations::define_operations! {
     NotificationList(EmptyParams) => "notification.list", false, false;
     NotificationDismiss(NotificationSelectParams) => "notification.dismiss", true, true;
     NotificationMarkRead(NotificationSelectParams) => "notification.mark_read", true, true;
+    NotificationAccept(NotificationAcceptParams) => "notification.accept", true, true;
 }
 
 #[cfg(test)]

@@ -599,6 +599,8 @@ pub(super) struct ClientConfirmCloseOverlay {
     pub(super) tab_target: Option<ClientTabCloseConfirmation>,
     pub(super) title: String,
     pub(super) detail: String,
+    /// Set when the dialog asks to run a notification log entry's action instead of closing.
+    pub(super) notification_id: Option<String>,
 }
 
 #[derive(Debug)]

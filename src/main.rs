@@ -202,7 +202,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # tab_mode = "ctrl+t"
 # workspace_mode = "ctrl+s"  # n new workspace, r rename, x close
 # agent_mode = "ctrl+a"      # movement only
-# notification_mode = ""     # j/k open log entries, x dismiss; needs ui.sidebar.notifications
+# notification_mode = ""     # j/k open log entries, a accept, x dismiss; needs ui.sidebar.notifications
 
 # Navigate-mode movement. These local shortcuts win while navigate mode is open.
 # They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, or 1..9 here.

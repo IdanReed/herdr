@@ -12,7 +12,10 @@ use ratatui::{
 };
 
 use super::*;
-use crate::api::schema::{NotificationLogEntry, NotificationSelectParams};
+use crate::api::schema::{
+    NotificationAcceptParams, NotificationActionState, NotificationLogEntry,
+    NotificationSelectParams,
+};
 
 /// Rows above the list: the rule, the header, and a blank row.
 const HEADER_ROWS: u16 = 3;
@@ -227,12 +230,17 @@ fn render_row(
     });
     let marker = if unread { "●" } else { " " };
     let width = usize::from(rect.width);
+    let badge = action_badge(row.entry, palette);
+    // The badge keeps one space after the title and one at the right edge.
+    let badge_width = badge.as_ref().map_or(0, |(text, _)| {
+        usize::from(super::render::display_width(text)) + 2
+    });
     let title = Line::from(vec![
         Span::raw(" "),
         Span::styled(marker, dim(Style::default().fg(palette.accent))),
         Span::raw(" "),
         Span::styled(
-            crate::ui::truncate_end(&row.entry.title, width.saturating_sub(3)),
+            crate::ui::truncate_end(&row.entry.title, width.saturating_sub(3 + badge_width)),
             title_style,
         ),
     ]);
@@ -240,6 +248,10 @@ fn render_row(
     Paragraph::new(title)
         .style(row_style)
         .render(Rect::new(rect.x, rect.y, rect.width, 1), buffer);
+    if let Some((text, style)) = badge.filter(|_| width > 3 + badge_width) {
+        let area = Rect::new(rect.x, rect.y, rect.width.saturating_sub(1), 1);
+        super::render::put_right_text(buffer, area, rect.y, &text, dim(style.patch(row_style)));
+    }
     if let Some(detail) = row.detail.as_deref().filter(|_| rect.height > 1) {
         let detail = Line::from(vec![
             Span::raw("   "),
@@ -251,6 +263,23 @@ fn render_row(
         Paragraph::new(detail)
             .style(row_style)
             .render(Rect::new(rect.x, rect.y + 1, rect.width, 1), buffer);
+    }
+}
+
+/// `[label]` while the action waits, `✓ label` once it ran.
+fn action_badge(entry: &NotificationLogEntry, palette: &Palette) -> Option<(String, Style)> {
+    let action = entry.action.as_ref()?;
+    match entry.action_state? {
+        NotificationActionState::Pending => Some((
+            format!("[{}]", action.label()),
+            Style::default()
+                .fg(palette.accent)
+                .add_modifier(Modifier::BOLD),
+        )),
+        NotificationActionState::Accepted => Some((
+            format!("✓ {}", action.label()),
+            Style::default().fg(palette.overlay0),
+        )),
     }
 }
 
@@ -329,6 +358,55 @@ impl ClientShellState {
         let id = entries[next].id.clone();
         self.reveal_notification(next);
         self.open_notification(&id, outcome);
+    }
+
+    /// A click opens the entry as `j`/`k` do, then asks before running a pending action.
+    pub(super) fn click_notification(&mut self, id: &str, outcome: &mut ClientShellInput) {
+        self.open_notification(id, outcome);
+        let Some(entry) = self
+            .notification_entries()
+            .iter()
+            .find(|entry| entry.id == id)
+        else {
+            return;
+        };
+        let Some(action) = entry.pending_action() else {
+            return;
+        };
+        let title = format!("{}: {}?", action.label(), entry.title);
+        let detail = entry.body.clone().unwrap_or_default();
+        self.overlay = Some(ClientShellOverlay::ConfirmClose(
+            ClientConfirmCloseOverlay {
+                workspace_id: entry.workspace_id.clone().unwrap_or_default(),
+                close_group: false,
+                tab_target: None,
+                title,
+                detail,
+                notification_id: Some(entry.id.clone()),
+            },
+        ));
+        outcome.repaint = true;
+    }
+
+    /// Runs the highlighted entry's pending action without asking.
+    pub(super) fn accept_selected_notification(&mut self, outcome: &mut ClientShellInput) {
+        let Some(id) = self.selected_notification_id.clone().filter(|id| {
+            self.notification_entries()
+                .iter()
+                .any(|entry| entry.id == *id && entry.pending_action().is_some())
+        }) else {
+            return;
+        };
+        self.accept_notification(id, outcome);
+    }
+
+    pub(super) fn accept_notification(&mut self, id: String, outcome: &mut ClientShellInput) {
+        self.push_endpoint_method_with_kind(
+            crate::api::schema::Method::NotificationAccept(NotificationAcceptParams { id }),
+            PendingEndpointKind::Generic,
+            outcome,
+        );
+        outcome.repaint = true;
     }
 
     /// Removes the highlighted entry and highlights the one that takes its place.

@@ -2354,8 +2354,54 @@
           ],
           "type": "object"
         },
+        "NotificationAcceptParams": {
+          "description": "Runs the action of one log entry, then marks the entry accepted and read.",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        "NotificationAction": {
+          "description": "A command attached to a log entry. `notification.accept` runs it once.",
+          "properties": {
+            "argv": {
+              "description": "Program and arguments. The program runs directly, without a shell.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "label": {
+              "description": "Short label shown with the entry. Defaults to `accept`; listed entries always carry it.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "argv"
+          ],
+          "type": "object"
+        },
         "NotificationAddParams": {
           "properties": {
+            "action": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/request/$defs/NotificationAction"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Command the entry runs once when the user accepts it."
+            },
             "body": {
               "type": [
                 "string",
@@ -6425,6 +6471,22 @@
             "params"
           ],
           "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "notification.accept",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/NotificationAcceptParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -7887,9 +7949,64 @@
             }
           ]
         },
+        "NotificationAction": {
+          "description": "A command attached to a log entry. `notification.accept` runs it once.",
+          "properties": {
+            "argv": {
+              "description": "Program and arguments. The program runs directly, without a shell.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "label": {
+              "description": "Short label shown with the entry. Defaults to `accept`; listed entries always carry it.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "argv"
+          ],
+          "type": "object"
+        },
+        "NotificationActionState": {
+          "description": "Whether an entry's action still waits for the user.",
+          "enum": [
+            "pending",
+            "accepted"
+          ],
+          "type": "string"
+        },
         "NotificationLogEntry": {
           "description": "One notification log entry.",
           "properties": {
+            "action": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/NotificationAction"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Command the entry runs when accepted, or null."
+            },
+            "action_state": {
+              "anyOf": [
+                {
+                  "$ref": "#/schemas/success_response/$defs/NotificationActionState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "`pending` until the action runs, then `accepted`. Null when there is no action."
+            },
             "body": {
               "type": [
                 "string",
@@ -10150,6 +10267,10 @@
             },
             {
               "properties": {
+                "instance": {
+                  "description": "Log instance; see `NotificationList`.",
+                  "type": "string"
+                },
                 "notification": {
                   "$ref": "#/schemas/success_response/$defs/NotificationLogEntry"
                 },
@@ -10160,13 +10281,18 @@
               },
               "required": [
                 "type",
-                "notification"
+                "notification",
+                "instance"
               ],
               "type": "object"
             },
             {
               "description": "Log entries, newest first.",
               "properties": {
+                "instance": {
+                  "description": "Stays the same for the life of one server process and changes after a\nrestart, when the in-memory log starts empty.",
+                  "type": "string"
+                },
                 "notifications": {
                   "items": {
                     "$ref": "#/schemas/success_response/$defs/NotificationLogEntry"
@@ -10180,7 +10306,8 @@
               },
               "required": [
                 "type",
-                "notifications"
+                "notifications",
+                "instance"
               ],
               "type": "object"
             },
@@ -10217,6 +10344,23 @@
               "required": [
                 "type",
                 "marked"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "The entry after its action started.",
+              "properties": {
+                "notification": {
+                  "$ref": "#/schemas/success_response/$defs/NotificationLogEntry"
+                },
+                "type": {
+                  "const": "notification_accepted",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "notification"
               ],
               "type": "object"
             },

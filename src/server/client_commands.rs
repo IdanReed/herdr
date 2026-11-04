@@ -262,6 +262,10 @@ mod tests {
             actual.remove("notification.mark_read").as_deref(),
             Some("a8cf1ee2fff63560c53e47cebe45ef7bbc2bb8112098306718f665f22567731b")
         );
+        assert_eq!(
+            actual.remove("notification.accept").as_deref(),
+            Some("3eefa65ea51d99263f09ec80a2579da7dc060e45ddf667fcc09e9a5027700958")
+        );
 
         assert_eq!(
             actual, expected,

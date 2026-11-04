@@ -1,7 +1,11 @@
-use crate::api::schema::{NotificationAddParams, NotificationSelectParams, ResponseResult};
+use crate::api::schema::{
+    NotificationAcceptParams, NotificationAction, NotificationAddParams, NotificationLogEntry,
+    NotificationSelectParams, ResponseResult, DEFAULT_NOTIFICATION_ACTION_LABEL,
+};
 use crate::app::notification_log::{
-    NewNotification, MAX_NOTIFICATION_BODY_CHARS, MAX_NOTIFICATION_SOURCE_CHARS,
-    MAX_NOTIFICATION_TITLE_CHARS,
+    NewNotification, NotificationAcceptError, MAX_NOTIFICATION_ACTION_ARGV_BYTES,
+    MAX_NOTIFICATION_ACTION_LABEL_CHARS, MAX_NOTIFICATION_BODY_CHARS,
+    MAX_NOTIFICATION_SOURCE_CHARS, MAX_NOTIFICATION_TITLE_CHARS,
 };
 use crate::app::App;
 
@@ -31,6 +35,42 @@ fn normalized_select(
     })
 }
 
+/// Names the accepted entry for its action.
+pub(crate) const NOTIFICATION_ID_ENV_VAR: &str = "HERDR_NOTIFICATION_ID";
+/// Names the entry's workspace for its action, when the entry has one.
+pub(crate) const NOTIFICATION_WORKSPACE_ID_ENV_VAR: &str = "HERDR_NOTIFICATION_WORKSPACE_ID";
+
+/// Keeps argv verbatim and stores the label the entry shows.
+fn normalized_action(
+    action: Option<NotificationAction>,
+) -> Result<Option<NotificationAction>, &'static str> {
+    let Some(action) = action else {
+        return Ok(None);
+    };
+    if action
+        .argv
+        .first()
+        .is_none_or(|program| program.trim().is_empty())
+    {
+        return Err("notification action needs a program in argv");
+    }
+    if action.argv.iter().any(|arg| arg.contains('\0')) {
+        return Err("notification action argv contains a NUL character");
+    }
+    if action.argv.iter().map(String::len).sum::<usize>() > MAX_NOTIFICATION_ACTION_ARGV_BYTES {
+        return Err("notification action argv is too long");
+    }
+    let label = match action.label.as_deref() {
+        Some(label) => sanitized_notification_text(label, MAX_NOTIFICATION_ACTION_LABEL_CHARS)
+            .ok_or("notification action label is empty")?,
+        None => DEFAULT_NOTIFICATION_ACTION_LABEL.to_owned(),
+    };
+    Ok(Some(NotificationAction {
+        argv: action.argv,
+        label: Some(label),
+    }))
+}
+
 fn current_unix_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -56,6 +96,10 @@ impl App {
             Ok(source) => source,
             Err(message) => return invalid_params(id, message),
         };
+        let action = match normalized_action(params.action) {
+            Ok(action) => action,
+            Err(message) => return invalid_params(id, message),
+        };
         // Store the canonical id so the entry keeps pointing at this workspace
         // even after other workspaces are added, moved, or closed.
         let workspace_id = match params.workspace_id {
@@ -77,10 +121,17 @@ impl App {
                 body,
                 workspace_id,
                 source,
+                action,
             },
             current_unix_ms(),
         );
-        encode_success(id, ResponseResult::NotificationAdded { notification })
+        encode_success(
+            id,
+            ResponseResult::NotificationAdded {
+                notification,
+                instance: self.state.notification_log.instance().to_owned(),
+            },
+        )
     }
 
     pub(super) fn handle_notification_list(&self, id: String) -> String {
@@ -93,6 +144,7 @@ impl App {
                     .newest_first()
                     .cloned()
                     .collect(),
+                instance: self.state.notification_log.instance().to_owned(),
             },
         )
     }
@@ -111,6 +163,80 @@ impl App {
             ),
             Err(message) => invalid_params(id, message),
         }
+    }
+
+    /// Runs a pending action the way shell custom commands run, then marks the
+    /// entry accepted and read. A failed start leaves the action pending.
+    pub(super) fn handle_notification_accept(
+        &mut self,
+        id: String,
+        params: NotificationAcceptParams,
+    ) -> String {
+        let entry_id = params.id.trim();
+        let entry = match self.state.notification_log.acceptable(entry_id) {
+            Ok(entry) => entry.clone(),
+            Err(error) => {
+                let (code, message) = match error {
+                    NotificationAcceptError::NotFound => (
+                        "notification_not_found",
+                        format!("notification {entry_id} not found"),
+                    ),
+                    NotificationAcceptError::NoAction => (
+                        "notification_no_action",
+                        format!("notification {entry_id} has no action"),
+                    ),
+                    NotificationAcceptError::AlreadyAccepted => (
+                        "notification_already_accepted",
+                        format!("notification {entry_id} was already accepted"),
+                    ),
+                };
+                return encode_error(id, code, message);
+            }
+        };
+        let Some(mut command) = self.notification_action_command(&entry) else {
+            return encode_error(
+                id,
+                "notification_no_action",
+                format!("notification {entry_id} has no action"),
+            );
+        };
+        match command.spawn() {
+            Ok(child) => self.detached_process_children.push(child),
+            Err(err) => {
+                return encode_error(
+                    id,
+                    "notification_action_failed",
+                    format!("failed to run the action of notification {entry_id}: {err}"),
+                )
+            }
+        }
+        match self.state.notification_log.mark_accepted(&entry.id) {
+            Some(notification) => {
+                encode_success(id, ResponseResult::NotificationAccepted { notification })
+            }
+            None => encode_error(
+                id,
+                "notification_not_found",
+                format!("notification {entry_id} not found"),
+            ),
+        }
+    }
+
+    /// The detached process for an entry's action, with the entry named in its environment.
+    pub(crate) fn notification_action_command(
+        &self,
+        entry: &NotificationLogEntry,
+    ) -> Option<std::process::Command> {
+        let (program, args) = entry.action.as_ref()?.argv.split_first()?;
+        let mut command = std::process::Command::new(program);
+        command.args(args);
+        crate::platform::configure_background_command(&mut command);
+        self.prepare_detached_command(&mut command);
+        command.env(NOTIFICATION_ID_ENV_VAR, &entry.id);
+        if let Some(workspace_id) = entry.workspace_id.as_deref() {
+            command.env(NOTIFICATION_WORKSPACE_ID_ENV_VAR, workspace_id);
+        }
+        Some(command)
     }
 
     pub(super) fn handle_notification_mark_read(
@@ -180,12 +306,13 @@ mod tests {
             body: None,
             workspace_id: workspace_id.map(str::to_owned),
             source: source.map(str::to_owned),
+            action: None,
         })
     }
 
     fn list(app: &mut crate::app::App) -> Vec<crate::api::schema::NotificationLogEntry> {
         match result(app, Method::NotificationList(Default::default())) {
-            ResponseResult::NotificationList { notifications } => notifications,
+            ResponseResult::NotificationList { notifications, .. } => notifications,
             other => panic!("unexpected result {other:?}"),
         }
     }
@@ -195,13 +322,14 @@ mod tests {
         let mut app = app();
         let second = app.public_workspace_id(1);
         // A 1-based index is a workspace target that other commands accept too.
-        let ResponseResult::NotificationAdded { notification } = result(
+        let ResponseResult::NotificationAdded { notification, .. } = result(
             &mut app,
             Method::NotificationAdd(NotificationAddParams {
                 title: "  finished\nbuild ".into(),
                 body: Some("exit\t0".into()),
                 workspace_id: Some("2".into()),
                 source: Some(" jobs ".into()),
+                action: None,
             }),
         ) else {
             panic!("expected notification_added");
@@ -317,5 +445,242 @@ mod tests {
             panic!("expected notification_marked_read");
         };
         assert_eq!(marked, 1);
+    }
+
+    fn add_with_action(
+        title: &str,
+        workspace_id: Option<&str>,
+        argv: &[&str],
+        label: Option<&str>,
+    ) -> Method {
+        Method::NotificationAdd(NotificationAddParams {
+            title: title.into(),
+            body: None,
+            workspace_id: workspace_id.map(str::to_owned),
+            source: None,
+            action: Some(crate::api::schema::NotificationAction {
+                argv: argv.iter().map(|arg| (*arg).to_owned()).collect(),
+                label: label.map(str::to_owned),
+            }),
+        })
+    }
+
+    fn accept(id: &str) -> Method {
+        Method::NotificationAccept(crate::api::schema::NotificationAcceptParams { id: id.into() })
+    }
+
+    /// A program every test machine has that exits at once.
+    fn harmless_argv() -> Vec<&'static str> {
+        if cfg!(windows) {
+            vec!["cmd", "/d", "/c", "exit 0"]
+        } else {
+            vec!["true"]
+        }
+    }
+
+    #[test]
+    fn list_shows_action_fields_even_when_an_entry_has_no_action() {
+        let mut app = app();
+        result(&mut app, add("plain", None, None));
+        let ResponseResult::NotificationAdded { notification, .. } = result(
+            &mut app,
+            add_with_action("deploy ready", None, &["deploy", "--now"], None),
+        ) else {
+            panic!("expected notification_added");
+        };
+        let action = notification.action.as_ref().expect("action");
+        assert_eq!(action.argv, ["deploy", "--now"]);
+        // A missing label is stored as the default, so clients always have one.
+        assert_eq!(action.label.as_deref(), Some("accept"));
+        assert_eq!(
+            notification.action_state,
+            Some(crate::api::schema::NotificationActionState::Pending)
+        );
+
+        let listed = call(&mut app, Method::NotificationList(Default::default()));
+        let entries = listed["result"]["notifications"].as_array().unwrap();
+        assert_eq!(
+            entries[0]["action"]["argv"],
+            serde_json::json!(["deploy", "--now"])
+        );
+        assert_eq!(entries[0]["action"]["label"], "accept");
+        assert_eq!(entries[0]["action_state"], "pending");
+        assert!(entries[1]["action"].is_null());
+        assert!(entries[1]["action_state"].is_null());
+        assert!(entries[1].as_object().unwrap().contains_key("action"));
+        assert!(entries[1].as_object().unwrap().contains_key("action_state"));
+    }
+
+    #[test]
+    fn add_rejects_actions_without_a_program_or_with_an_empty_label() {
+        let mut app = app();
+        let too_long =
+            "x".repeat(crate::app::notification_log::MAX_NOTIFICATION_ACTION_ARGV_BYTES + 1);
+        for method in [
+            add_with_action("t", None, &[], None),
+            add_with_action("t", None, &[" "], None),
+            add_with_action("t", None, &["run", "a\0b"], None),
+            add_with_action("t", None, &["run", too_long.as_str()], None),
+            add_with_action("t", None, &["run"], Some(" \n ")),
+        ] {
+            let response = call(&mut app, method);
+            assert_eq!(response["error"]["code"], "invalid_params", "{response}");
+        }
+        assert!(list(&mut app).is_empty());
+
+        let ResponseResult::NotificationAdded { notification, .. } = result(
+            &mut app,
+            add_with_action("t", None, &["run"], Some("  open\tlog ")),
+        ) else {
+            panic!("expected notification_added");
+        };
+        assert_eq!(
+            notification.action.unwrap().label.as_deref(),
+            Some("open log")
+        );
+    }
+
+    #[test]
+    fn action_command_runs_argv_directly_and_names_the_entry() {
+        let mut app = app();
+        let second = app.public_workspace_id(1);
+        let ResponseResult::NotificationAdded { notification, .. } = result(
+            &mut app,
+            add_with_action(
+                "deploy",
+                Some(&second),
+                &["deploy", "--to", "two words"],
+                None,
+            ),
+        ) else {
+            panic!("expected notification_added");
+        };
+        let command = app
+            .notification_action_command(&notification)
+            .expect("action command");
+        assert_eq!(command.get_program(), "deploy");
+        assert_eq!(
+            command.get_args().collect::<Vec<_>>(),
+            ["--to", "two words"]
+        );
+        let env = command
+            .get_envs()
+            .filter_map(|(key, value)| {
+                Some((key.to_str()?.to_owned(), value?.to_str()?.to_owned()))
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            env.get(super::NOTIFICATION_ID_ENV_VAR).map(String::as_str),
+            Some(notification.id.as_str())
+        );
+        assert_eq!(
+            env.get(super::NOTIFICATION_WORKSPACE_ID_ENV_VAR),
+            Some(&second)
+        );
+        // Shell custom commands get these too.
+        assert!(env.contains_key(crate::api::SOCKET_PATH_ENV_VAR));
+        assert!(env.contains_key("HERDR_ACTIVE_WORKSPACE_ID"));
+
+        let ResponseResult::NotificationAdded { notification, .. } =
+            result(&mut app, add_with_action("global", None, &["run"], None))
+        else {
+            panic!("expected notification_added");
+        };
+        let command = app.notification_action_command(&notification).unwrap();
+        assert!(!command
+            .get_envs()
+            .any(|(key, _)| key == super::NOTIFICATION_WORKSPACE_ID_ENV_VAR));
+    }
+
+    #[test]
+    fn accept_runs_the_action_once_and_marks_the_entry_read() {
+        let mut app = app();
+        result(&mut app, add("plain", None, None));
+        result(
+            &mut app,
+            add_with_action("go", None, &harmless_argv(), None),
+        );
+        let revision = app.state.notification_log.revision();
+
+        assert_eq!(
+            call(&mut app, accept("n9"))["error"]["code"],
+            "notification_not_found"
+        );
+        assert_eq!(
+            call(&mut app, accept("n1"))["error"]["code"],
+            "notification_no_action"
+        );
+        assert_eq!(app.state.notification_log.revision(), revision);
+
+        let children = app.detached_process_children.len();
+        let ResponseResult::NotificationAccepted { notification } =
+            result(&mut app, accept(" n2 "))
+        else {
+            panic!("expected notification_accepted");
+        };
+        assert_eq!(app.detached_process_children.len(), children + 1);
+        assert_eq!(
+            notification.action_state,
+            Some(crate::api::schema::NotificationActionState::Accepted)
+        );
+        assert!(notification.read);
+        assert_eq!(app.state.notification_log.revision(), revision + 1);
+        assert_eq!(list(&mut app)[0], notification);
+
+        assert_eq!(
+            call(&mut app, accept("n2"))["error"]["code"],
+            "notification_already_accepted"
+        );
+        assert_eq!(app.detached_process_children.len(), children + 1);
+        for child in &mut app.detached_process_children {
+            let _ = child.wait();
+        }
+    }
+
+    #[test]
+    fn a_failed_start_leaves_the_action_pending() {
+        let mut app = app();
+        result(
+            &mut app,
+            add_with_action(
+                "go",
+                None,
+                &["herdr-test-program-that-does-not-exist"],
+                None,
+            ),
+        );
+
+        let response = call(&mut app, accept("n1"));
+        assert_eq!(response["error"]["code"], "notification_action_failed");
+        let entry = &list(&mut app)[0];
+        assert!(entry.pending_action().is_some());
+        assert!(!entry.read);
+    }
+
+    #[test]
+    fn add_and_list_name_the_log_instance_until_the_server_restarts() {
+        let mut app = app();
+        let ResponseResult::NotificationAdded { instance, .. } =
+            result(&mut app, add("a", None, None))
+        else {
+            panic!("expected notification_added");
+        };
+        assert!(!instance.is_empty());
+        let listed = call(&mut app, Method::NotificationList(Default::default()));
+        assert_eq!(listed["result"]["instance"], instance.as_str());
+
+        // An empty log after a dismiss is the same instance.
+        result(&mut app, Method::NotificationDismiss(Default::default()));
+        let listed = call(&mut app, Method::NotificationList(Default::default()));
+        assert!(listed["result"]["notifications"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(listed["result"]["instance"], instance.as_str());
+
+        // A restarted server starts a new log with a new instance.
+        let mut restarted = super::tests::app();
+        let listed = call(&mut restarted, Method::NotificationList(Default::default()));
+        assert_ne!(listed["result"]["instance"], instance.as_str());
     }
 }

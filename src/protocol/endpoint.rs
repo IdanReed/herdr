@@ -367,6 +367,11 @@ mod tests {
                 source: Some("jobs".into()),
                 created_unix_ms: 1_000,
                 read: false,
+                action: Some(crate::api::schema::NotificationAction {
+                    argv: vec!["run".into()],
+                    label: Some("accept".into()),
+                }),
+                action_state: Some(crate::api::schema::NotificationActionState::Pending),
             }],
         };
         let ServerMessage::EndpointControl { kind, data } = notification_log_message(&log).unwrap()
@@ -382,9 +387,14 @@ mod tests {
         let mut value = serde_json::from_str::<serde_json::Value>(&data).unwrap();
         value["future"] = serde_json::json!(true);
         value["entries"][0]["future"] = serde_json::json!("ignored");
-        value["entries"][0].as_object_mut().unwrap().remove("read");
+        // Entries from a server without actions decode without one.
+        for field in ["read", "action", "action_state"] {
+            value["entries"][0].as_object_mut().unwrap().remove(field);
+        }
         let decoded: EndpointNotificationLog = serde_json::from_value(value).unwrap();
         assert!(!decoded.entries[0].read);
+        assert!(decoded.entries[0].action.is_none());
+        assert!(decoded.entries[0].action_state.is_none());
         let minimal: EndpointNotificationLog =
             serde_json::from_str(r#"{"boot_id":"boot","revision":0}"#).unwrap();
         assert!(minimal.entries.is_empty());

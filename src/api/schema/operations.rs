@@ -208,6 +208,7 @@ mod tests {
             "notification.add",
             "notification.dismiss",
             "notification.mark_read",
+            "notification.accept",
         ]
         .into_iter()
         .collect::<BTreeSet<_>>();

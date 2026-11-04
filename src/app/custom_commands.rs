@@ -290,6 +290,15 @@ impl App {
         binding: &crate::config::CustomCommandKeybind,
     ) -> std::io::Result<()> {
         let mut command = crate::platform::detached_custom_command_process(&binding.command);
+        self.prepare_detached_command(&mut command);
+        let child = command.spawn()?;
+        self.detached_process_children.push(child);
+        Ok(())
+    }
+
+    /// Gives a background command what shell custom commands get: no stdio,
+    /// the Herdr environment, and the focused pane's directory.
+    pub(crate) fn prepare_detached_command(&self, command: &mut std::process::Command) {
         command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -299,9 +308,6 @@ impl App {
         if let Some(cwd) = cwd {
             command.current_dir(cwd);
         }
-        let child = command.spawn()?;
-        self.detached_process_children.push(child);
-        Ok(())
     }
 
     pub(crate) fn open_focused_scrollback_in_editor(&mut self) -> std::io::Result<()> {

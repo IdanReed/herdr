@@ -96,7 +96,12 @@ impl ScopeMode {
                 ("esc", "done"),
             ],
             Self::Agent => &[("j/k ↑/↓", "focus"), ("esc", "done")],
-            Self::Notification => &[("j/k ↑/↓", "open"), ("x", "dismiss"), ("esc", "done")],
+            Self::Notification => &[
+                ("j/k ↑/↓", "open"),
+                ("a", "accept"),
+                ("x", "dismiss"),
+                ("esc", "done"),
+            ],
         }
     }
 
@@ -238,6 +243,10 @@ impl ClientShellState {
         }
         if scope == ScopeMode::Notification && plain_key(key, 'x') {
             self.dismiss_selected_notification(outcome);
+            return;
+        }
+        if scope == ScopeMode::Notification && plain_key(key, 'a') {
+            self.accept_selected_notification(outcome);
             return;
         }
         // A mode bound under the prefix closes or switches on its bare key. Item

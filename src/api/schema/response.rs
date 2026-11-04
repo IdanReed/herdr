@@ -201,16 +201,25 @@ pub enum ResponseResult {
     },
     NotificationAdded {
         notification: NotificationLogEntry,
+        /// Log instance; see `NotificationList`.
+        instance: String,
     },
     /// Log entries, newest first.
     NotificationList {
         notifications: Vec<NotificationLogEntry>,
+        /// Stays the same for the life of one server process and changes after a
+        /// restart, when the in-memory log starts empty.
+        instance: String,
     },
     NotificationDismissed {
         removed: usize,
     },
     NotificationMarkedRead {
         marked: usize,
+    },
+    /// The entry after its action started.
+    NotificationAccepted {
+        notification: NotificationLogEntry,
     },
     ClientWindowTitle {
         changed: bool,

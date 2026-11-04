@@ -4,14 +4,20 @@
 //! projection and change it only through API methods.
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::api::schema::{NotificationLogEntry, NotificationSelectParams};
+use crate::api::schema::{
+    NotificationAction, NotificationActionState, NotificationLogEntry, NotificationSelectParams,
+};
 
 /// Oldest entries are dropped once the log holds this many.
 pub(crate) const MAX_NOTIFICATION_LOG_ENTRIES: usize = 100;
 pub(crate) const MAX_NOTIFICATION_TITLE_CHARS: usize = 80;
 pub(crate) const MAX_NOTIFICATION_BODY_CHARS: usize = 240;
 pub(crate) const MAX_NOTIFICATION_SOURCE_CHARS: usize = 80;
+pub(crate) const MAX_NOTIFICATION_ACTION_LABEL_CHARS: usize = 24;
+/// Bounds the argv every client receives with the log.
+pub(crate) const MAX_NOTIFICATION_ACTION_ARGV_BYTES: usize = 16 * 1024;
 
 /// Fields of a new entry after validation. The log assigns id and time.
 pub(crate) struct NewNotification {
@@ -19,20 +25,57 @@ pub(crate) struct NewNotification {
     pub(crate) body: Option<String>,
     pub(crate) workspace_id: Option<String>,
     pub(crate) source: Option<String>,
+    pub(crate) action: Option<NotificationAction>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Why an entry's action cannot run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NotificationAcceptError {
+    NotFound,
+    NoAction,
+    AlreadyAccepted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NotificationLog {
     /// Oldest first, so appending and dropping the oldest are both O(1).
     entries: VecDeque<NotificationLogEntry>,
     next_id: u64,
     /// Changes whenever an entry is added, removed, or marked read.
     revision: u64,
+    /// Names this log for the life of the server process. The log is not kept
+    /// across restarts, so a new value tells clients that older entries are gone.
+    instance: String,
+}
+
+impl Default for NotificationLog {
+    fn default() -> Self {
+        // The counter keeps logs made in one process distinct even within one clock tick.
+        static CREATED: AtomicU64 = AtomicU64::new(0);
+        let started = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        Self {
+            entries: VecDeque::new(),
+            next_id: 0,
+            revision: 0,
+            instance: format!(
+                "{}-{started}-{}",
+                std::process::id(),
+                CREATED.fetch_add(1, Ordering::Relaxed)
+            ),
+        }
+    }
 }
 
 impl NotificationLog {
     pub(crate) fn revision(&self) -> u64 {
         self.revision
+    }
+
+    pub(crate) fn instance(&self) -> &str {
+        &self.instance
     }
 
     #[cfg(test)]
@@ -59,6 +102,11 @@ impl NotificationLog {
             source: notification.source,
             created_unix_ms,
             read: false,
+            action_state: notification
+                .action
+                .as_ref()
+                .map(|_| NotificationActionState::Pending),
+            action: notification.action,
         };
         if self.entries.len() >= MAX_NOTIFICATION_LOG_ENTRIES {
             self.entries.pop_front();
@@ -66,6 +114,37 @@ impl NotificationLog {
         self.entries.push_back(entry.clone());
         self.revision = self.revision.saturating_add(1);
         entry
+    }
+
+    /// The entry whose pending action may run now.
+    pub(crate) fn acceptable(
+        &self,
+        id: &str,
+    ) -> Result<&NotificationLogEntry, NotificationAcceptError> {
+        let entry = self
+            .entries
+            .iter()
+            .find(|entry| entry.id == id)
+            .ok_or(NotificationAcceptError::NotFound)?;
+        match entry.action_state {
+            None => Err(NotificationAcceptError::NoAction),
+            Some(NotificationActionState::Accepted) => {
+                Err(NotificationAcceptError::AlreadyAccepted)
+            }
+            Some(NotificationActionState::Pending) => Ok(entry),
+        }
+    }
+
+    /// Marks a pending entry accepted and read after its action started.
+    pub(crate) fn mark_accepted(&mut self, id: &str) -> Option<NotificationLogEntry> {
+        let entry = self.entries.iter_mut().find(|entry| {
+            entry.id == id && entry.action_state == Some(NotificationActionState::Pending)
+        })?;
+        entry.action_state = Some(NotificationActionState::Accepted);
+        entry.read = true;
+        let entry = entry.clone();
+        self.revision = self.revision.saturating_add(1);
+        Some(entry)
     }
 
     /// Removes the selected entries and returns how many were removed.
@@ -115,6 +194,7 @@ mod tests {
             body: None,
             workspace_id: None,
             source: source.map(str::to_owned),
+            action: None,
         }
     }
 
@@ -195,6 +275,48 @@ mod tests {
         assert_eq!(log.revision(), revision + 1);
         // Marking an entry that is already read is not a change.
         assert_eq!(log.mark_read(&select(None, None)), 0);
+        assert_eq!(log.revision(), revision + 1);
+    }
+
+    #[test]
+    fn an_action_is_pending_until_accepted_once() {
+        let mut log = NotificationLog::default();
+        log.add(note("plain", None), 1);
+        let mut with_action = note("deploy", None);
+        with_action.action = Some(NotificationAction {
+            argv: vec!["deploy".into(), "--now".into()],
+            label: Some("deploy".into()),
+        });
+        let added = log.add(with_action, 2);
+        assert_eq!(added.action_state, Some(NotificationActionState::Pending));
+        assert!(added.pending_action().is_some());
+        let revision = log.revision();
+
+        assert_eq!(
+            log.acceptable("missing").unwrap_err(),
+            NotificationAcceptError::NotFound
+        );
+        assert_eq!(
+            log.acceptable("n1").unwrap_err(),
+            NotificationAcceptError::NoAction
+        );
+        assert_eq!(log.acceptable("n2").unwrap().title, "deploy");
+        assert!(log.mark_accepted("n1").is_none());
+        assert_eq!(log.revision(), revision);
+
+        let accepted = log.mark_accepted("n2").expect("pending entry");
+        assert_eq!(
+            accepted.action_state,
+            Some(NotificationActionState::Accepted)
+        );
+        assert!(accepted.read);
+        assert!(accepted.pending_action().is_none());
+        assert_eq!(log.revision(), revision + 1);
+        assert_eq!(
+            log.acceptable("n2").unwrap_err(),
+            NotificationAcceptError::AlreadyAccepted
+        );
+        assert!(log.mark_accepted("n2").is_none());
         assert_eq!(log.revision(), revision + 1);
     }
 }

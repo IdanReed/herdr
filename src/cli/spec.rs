@@ -693,6 +693,14 @@ mod tests {
     }
 
     #[test]
+    fn notification_add_help_names_the_action_options() {
+        // Clients look for --action-label here to detect notification actions.
+        let help = long_help(&["notification", "add"]);
+        assert!(help.contains("--action-label"), "{help}");
+        assert!(help.contains("ARGV"), "{help}");
+    }
+
+    #[test]
     fn agent_resources_appear_on_command_groups_but_not_leaf_commands() {
         for group in ["agent", "pane", "workspace", "terminal"] {
             let help = long_help(&[group]);

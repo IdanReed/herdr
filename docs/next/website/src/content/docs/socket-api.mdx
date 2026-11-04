@@ -97,7 +97,7 @@ Raw socket method names use dot notation:
 | Area | Methods |
 | --- | --- |
 | Server | `ping`, `server.stop`, `server.reload_config`, `server.agent_manifests`, `server.reload_agent_manifests` |
-| Notification | `notification.show`, `notification.add`, `notification.list`, `notification.dismiss`, `notification.mark_read` |
+| Notification | `notification.show`, `notification.add`, `notification.list`, `notification.dismiss`, `notification.mark_read`, `notification.accept` |
 | Client | `client.window_title.set`, `client.window_title.clear` |
 | Session | `session.snapshot` |
 | Workspace | `workspace.create`, `workspace.list`, `workspace.get`, `workspace.focus`, `workspace.rename`, `workspace.move`, `workspace.move_block`, `workspace.report_metadata`, `workspace.close` |
@@ -360,15 +360,63 @@ workspace closes.
 The response contains the new entry with its server-assigned `id`:
 
 ```json
-{"id":"req_log_add","result":{"type":"notification_added","notification":{"id":"n4","title":"tests passed","body":"412 passed","workspace_id":"w2","source":"jobs","created_unix_ms":1767225600000,"read":false}}}
+{"id":"req_log_add","result":{"type":"notification_added","notification":{"id":"n4","title":"tests passed","body":"412 passed","workspace_id":"w2","source":"jobs","created_unix_ms":1767225600000,"read":false,"action":null,"action_state":null},"instance":"4120-1767225500000000000-0"}}
 ```
 
 `notification.list` takes empty params and returns the entries, newest first:
 
 ```json
 {"id":"req_log_list","method":"notification.list","params":{}}
-{"id":"req_log_list","result":{"type":"notification_list","notifications":[{"id":"n4","title":"tests passed","workspace_id":"w2","source":"jobs","created_unix_ms":1767225600000,"read":false}]}}
+{"id":"req_log_list","result":{"type":"notification_list","notifications":[{"id":"n4","title":"tests passed","workspace_id":"w2","source":"jobs","created_unix_ms":1767225600000,"read":false,"action":null,"action_state":null}],"instance":"4120-1767225500000000000-0"}}
 ```
+
+`instance` names the log. It stays the same while one server process runs and
+changes when the server restarts, because the restarted server starts with an
+empty log. A script that remembers the ids it posted can compare `instance`
+with the value it saw before: the same `instance` without its entry means the
+entry was dismissed, and a new `instance` means the log was reset. Treat the
+value as an opaque string.
+
+An entry can carry an action, a command that runs once when the user accepts
+the entry. Pass `action` with an `argv` array and an optional `label`:
+
+```json
+{"id":"req_log_action","method":"notification.add","params":{"title":"review ready","workspace_id":"w2","action":{"argv":["open-review","--id","42"],"label":"open"}}}
+```
+
+`argv` must name a program in its first element. Herdr runs the program
+directly, without a shell, so `argv` elements reach it unchanged. Arguments may
+not contain NUL characters, and all of `argv` together is limited to 16 KiB.
+`label` is cleaned like `source`, is limited to 24 characters, and defaults to
+`accept`. Invalid actions return `invalid_params`. Listed entries always carry
+the label. `action` is `null` for entries without an action.
+
+`action_state` is `pending` until the action runs and `accepted` after it. It
+is `null` for entries without an action. The TUI marks a pending entry with its
+label in brackets, such as `[open]`, and an accepted entry with `✓ open`.
+
+`notification.accept` runs the action of one entry:
+
+```json
+{"id":"req_log_accept","method":"notification.accept","params":{"id":"n5"}}
+{"id":"req_log_accept","result":{"type":"notification_accepted","notification":{"id":"n5","title":"review ready","workspace_id":"w2","created_unix_ms":1767225600000,"read":true,"action":{"argv":["open-review","--id","42"],"label":"open"},"action_state":"accepted"}}}
+```
+
+Herdr starts the action in the background the same way it runs
+`[[keys.command]]` entries with `type = "shell"`: no stdin or output, the
+`HERDR_*` environment those commands get, and the focused pane's working
+directory. It also sets `HERDR_NOTIFICATION_ID` to the entry id and, when the
+entry has a workspace, `HERDR_NOTIFICATION_WORKSPACE_ID` to that workspace id.
+Herdr does not wait for the action to finish. After the action starts, the
+entry is `accepted` and read, and the response returns it. An action runs at
+most once. Errors:
+
+| Code | When |
+| --- | --- |
+| `notification_not_found` | No entry has this `id`. |
+| `notification_no_action` | The entry has no action. |
+| `notification_already_accepted` | The action already ran. |
+| `notification_action_failed` | The program could not start. The entry stays `pending`. |
 
 `notification.dismiss` removes entries and `notification.mark_read` marks them
 read. Both take an optional `id` and an optional `source`. An entry is selected
@@ -385,7 +433,9 @@ when it matches every field that is given, so empty params select every entry:
 an error, so two clients can dismiss the same entry. Ids are unique within one
 server run and are not reused when old entries drop out. The TUI uses
 `notification.mark_read` when the user opens an entry and `notification.dismiss`
-when the user dismisses one.
+when the user dismisses one. It uses `notification.accept` when the user
+accepts an entry with `a` in notifications mode, or clicks an entry and confirms
+its action.
 
 Set or clear the foreground client's outer terminal window title:
 

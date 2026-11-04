@@ -888,7 +888,23 @@ impl ClientShellState {
             return;
         }
 
-        if matches!(self.overlay, Some(ClientShellOverlay::ConfirmClose(_))) {
+        if let Some(ClientShellOverlay::ConfirmClose(confirm)) = self.overlay.as_ref() {
+            if confirm.notification_id.is_some() {
+                // Enter or y runs the action. Esc or n cancels and leaves the mode as it was.
+                let plain = |character| {
+                    crate::config::terminal_key_matches_combo(
+                        key,
+                        (KeyCode::Char(character), KeyModifiers::empty()),
+                    )
+                };
+                if key.code == KeyCode::Enter || plain('y') {
+                    self.accept_close_confirmation(outcome);
+                } else if key.code == KeyCode::Esc || plain('n') {
+                    self.overlay = None;
+                    outcome.repaint = true;
+                }
+                return;
+            }
             if key.code == KeyCode::Enter {
                 self.accept_close_confirmation(outcome);
             } else if key.code == KeyCode::Esc {
@@ -1091,6 +1107,10 @@ impl ClientShellState {
             return;
         };
         outcome.repaint = true;
+        if let Some(id) = confirm.notification_id {
+            self.accept_notification(id, outcome);
+            return;
+        }
         let method = if let Some(target) = confirm.tab_target {
             if target.workspace.endpoint_id != self.active_endpoint_id
                 || !self.navigation_target_valid(&target.workspace)
@@ -1223,6 +1243,7 @@ impl ClientShellState {
                     "Close workspace?".to_owned()
                 },
                 detail: format!("{} — {scope}", workspace.label),
+                notification_id: None,
             },
         ));
         true

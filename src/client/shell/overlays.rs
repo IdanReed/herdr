@@ -1258,8 +1258,14 @@ fn render_confirm_close_overlay(
     c: &ClientConfirmCloseOverlay,
     p: &Palette,
 ) -> Option<OverlayRender> {
+    // Running a notification action is not destructive, so it skips the warning color.
+    let (color, confirm) = if c.notification_id.is_some() {
+        (p.accent, " ↵ run ")
+    } else {
+        (p.red, " ↵ confirm ")
+    };
     let q = popup(b.area, 64, 6)?;
-    let i = panel(b, q, p.red, p.panel_bg)?;
+    let i = panel(b, q, color, p.panel_bg)?;
     put_text(
         b,
         i.x,
@@ -1267,7 +1273,7 @@ fn render_confirm_close_overlay(
         i.width,
         &format!(" {}", c.title),
         Style::default()
-            .fg(p.red)
+            .fg(color)
             .bg(p.panel_bg)
             .add_modifier(Modifier::BOLD),
     );
@@ -1286,10 +1292,10 @@ fn render_confirm_close_overlay(
     button(
         b,
         *ok,
-        " ↵ confirm ",
+        confirm,
         Style::default()
             .fg(contrast(p))
-            .bg(p.red)
+            .bg(color)
             .add_modifier(Modifier::BOLD),
     );
     button(

@@ -463,7 +463,7 @@ pub struct KeysConfig {
     pub workspace_mode: BindingConfig,
     /// Enter agents mode: move focus between agents. Default: "ctrl+a"
     pub agent_mode: BindingConfig,
-    /// Enter notifications mode: open and dismiss notification log entries. Unset by default.
+    /// Enter notifications mode: open, accept, and dismiss notification log entries. Unset by default.
     pub notification_mode: BindingConfig,
     /// Optional indexed shortcuts expanded over number keys 1-9.
     pub indexed: IndexedKeysConfig,

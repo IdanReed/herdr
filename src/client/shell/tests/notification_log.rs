@@ -1,5 +1,7 @@
 use super::*;
-use crate::api::schema::{Method, NotificationLogEntry};
+use crate::api::schema::{
+    Method, NotificationAction, NotificationActionState, NotificationLogEntry,
+};
 use crate::raw_input::RawInputEvent;
 
 const CTRL_N: u8 = 0x0e;
@@ -20,6 +22,8 @@ fn entry(id: &str, title: &str, workspace_id: Option<&str>, read: bool) -> Notif
         source: Some("jobs".into()),
         created_unix_ms: 1,
         read,
+        action: None,
+        action_state: None,
     }
 }
 
@@ -344,4 +348,148 @@ fn dragging_the_section_divider_resizes_only_spaces_and_agents() {
     compose_rows(&mut state, 30);
     assert_eq!(state.hits.sidebar_section_span.bottom(), log_top);
     assert!(state.hits.sidebar_section_divider.y < divider.y);
+}
+
+fn with_action(
+    mut entry: NotificationLogEntry,
+    label: &str,
+    state: NotificationActionState,
+) -> NotificationLogEntry {
+    entry.action = Some(NotificationAction {
+        argv: vec!["run".into()],
+        label: Some(label.into()),
+    });
+    entry.action_state = Some(state);
+    entry
+}
+
+fn action_entries() -> Vec<NotificationLogEntry> {
+    vec![
+        with_action(
+            entry("n3", "finished deploy", Some("ws_2"), false),
+            "deploy",
+            NotificationActionState::Pending,
+        ),
+        with_action(
+            entry("n2", "ran migration", None, true),
+            "migrate",
+            NotificationActionState::Accepted,
+        ),
+        entry("n1", "plain entry", None, false),
+    ]
+}
+
+fn row_text(state: &ClientShellState, rows: &[String], id: &str) -> String {
+    let rect = hit(state, id);
+    rows[usize::from(rect.y)]
+        .chars()
+        .skip(usize::from(rect.x))
+        .take(usize::from(rect.width))
+        .collect()
+}
+
+fn accepted_id(outcome: &ClientShellInput) -> Option<String> {
+    match methods(outcome)[..] {
+        [Method::NotificationAccept(params)] => Some(params.id.clone()),
+        _ => None,
+    }
+}
+
+#[test]
+fn entries_show_whether_their_action_waits_or_ran() {
+    let mut state = shell_with_log(&log_config(), action_entries());
+    let (_, rows) = compose_rows(&mut state, 30);
+
+    let pending = row_text(&state, &rows, "n3");
+    assert!(pending.starts_with(" ● finished"), "{pending:?}");
+    assert!(pending.trim_end().ends_with("[deploy]"), "{pending:?}");
+    let accepted = row_text(&state, &rows, "n2");
+    assert!(accepted.trim_end().ends_with("✓ migrate"), "{accepted:?}");
+    let plain = row_text(&state, &rows, "n1");
+    assert!(!plain.contains('[') && !plain.contains('✓'), "{plain:?}");
+}
+
+#[test]
+fn notifications_mode_a_runs_the_selected_pending_action_without_asking() {
+    let mut state = shell_with_log(&log_config(), action_entries());
+    compose_rows(&mut state, 30);
+
+    state.handle_input_bytes(&[CTRL_N]);
+    let (_, rows) = compose_rows(&mut state, 30);
+    assert!(rows.join("\n").contains("a accept"), "{rows:#?}");
+    // Nothing is selected yet.
+    assert!(state.handle_input_bytes(b"a").actions.is_empty());
+
+    state.handle_input_bytes(b"j");
+    let accepted = state.handle_input_bytes(b"a");
+    assert_eq!(accepted_id(&accepted).as_deref(), Some("n3"));
+    assert!(state.overlay.is_none());
+    assert_eq!(state.mode, ClientShellMode::Scope(ScopeMode::Notification));
+
+    // An accepted entry and an entry without an action have nothing to run.
+    for id in ["n2", "n1"] {
+        state.handle_input_bytes(b"j");
+        assert_eq!(state.selected_notification_id.as_deref(), Some(id));
+        let outcome = state.handle_input_bytes(b"a");
+        assert!(outcome.actions.is_empty(), "{id}: {:?}", outcome.actions);
+    }
+}
+
+#[test]
+fn clicking_an_entry_with_a_pending_action_asks_before_running_it() {
+    let mut state = shell_with_log(&log_config(), action_entries());
+    compose_rows(&mut state, 30);
+
+    let rect = hit(&state, "n3");
+    let opened = click(&mut state, rect);
+    // The click focuses the space and marks the entry read, as for any entry.
+    assert!(matches!(
+        methods(&opened)[..],
+        [Method::WorkspaceFocus(_), Method::NotificationMarkRead(_)]
+    ));
+    assert!(matches!(
+        state.overlay.as_ref(),
+        Some(ClientShellOverlay::ConfirmClose(ClientConfirmCloseOverlay {
+            notification_id: Some(id),
+            title,
+            ..
+        })) if id == "n3" && title == "deploy: finished deploy?"
+    ));
+    let (_, rows) = compose_rows(&mut state, 30);
+    let screen = rows.join("\n");
+    assert!(screen.contains("deploy: finished deploy?"), "{screen}");
+    assert!(screen.contains("↵ run"), "{screen}");
+
+    // Esc and n cancel without leaving the terminal.
+    for cancel in [&b"\x1b"[..], b"n"] {
+        let outcome = state.handle_input_bytes(cancel);
+        assert!(outcome.actions.is_empty(), "{cancel:?}");
+        assert!(state.overlay.is_none(), "{cancel:?}");
+        assert_eq!(state.mode, ClientShellMode::Terminal);
+        click(&mut state, rect);
+    }
+
+    // Enter and y run the action.
+    for run in [&b"\r"[..], b"y"] {
+        let outcome = state.handle_input_bytes(run);
+        assert_eq!(accepted_id(&outcome).as_deref(), Some("n3"), "{run:?}");
+        assert!(state.overlay.is_none());
+        click(&mut state, rect);
+    }
+
+    // So does the dialog's run button.
+    compose_rows(&mut state, 30);
+    let button = state.hits.overlay_primary;
+    let outcome = click(&mut state, button);
+    assert_eq!(accepted_id(&outcome).as_deref(), Some("n3"));
+    assert!(state.overlay.is_none());
+
+    // Entries whose action ran, or that have none, open without a dialog.
+    for id in ["n2", "n1"] {
+        compose_rows(&mut state, 30);
+        let rect = hit(&state, id);
+        let outcome = click(&mut state, rect);
+        assert!(accepted_id(&outcome).is_none());
+        assert!(state.overlay.is_none(), "{id}");
+    }
 }

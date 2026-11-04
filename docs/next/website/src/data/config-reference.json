@@ -869,7 +869,7 @@
           "key": "keys.notification_mode",
           "type": "keybinding",
           "default": "unset",
-          "description": "Enter notifications mode: j/k or arrows open the next or previous notification log entry, and x dismisses the highlighted entry. Requires ui.sidebar.notifications.enabled. Unset by default."
+          "description": "Enter notifications mode: j/k or arrows open the next or previous notification log entry, a runs the highlighted entry's action, and x dismisses it. Requires ui.sidebar.notifications.enabled. Unset by default."
         },
         {
           "key": "keys.indexed.tabs",

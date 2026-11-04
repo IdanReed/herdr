@@ -1082,6 +1082,7 @@ async fn client_shell_receives_the_notification_log_before_the_snapshot_it_chang
             body: None,
             workspace_id: None,
             source: Some("jobs".into()),
+            action: None,
         }),
     });
     assert!(response.contains("notification_added"), "{response}");

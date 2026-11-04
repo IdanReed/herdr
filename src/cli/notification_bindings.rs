@@ -1,7 +1,9 @@
 use clap::Command;
 
 use crate::api::schema::common::NotificationShowProjection;
-use crate::api::schema::notifications::{NotificationAddProjection, NotificationSelectProjection};
+use crate::api::schema::notifications::{
+    NotificationAcceptProjection, NotificationAddProjection, NotificationSelectProjection,
+};
 use crate::api::schema::{EmptyParams, Method, Request};
 
 use super::super::projection::{self, cli_projection, Leaf, ParseError};
@@ -10,7 +12,7 @@ cli_projection! {
     pub(crate) NotificationListProjection for EmptyParams {}
 }
 
-const LEAVES: [Leaf; 5] = [
+const LEAVES: [Leaf; 6] = [
     Leaf {
         name: "show",
         about: "Show a notification",
@@ -22,7 +24,7 @@ const LEAVES: [Leaf; 5] = [
     },
     Leaf {
         name: "add",
-        about: "Add an entry to the notification log",
+        about: "Add an entry to the notification log, optionally with an action after --",
         id: "cli:notification:add",
         arguments: NotificationAddProjection::arguments,
         method: |matches| {
@@ -54,6 +56,15 @@ const LEAVES: [Leaf; 5] = [
         arguments: NotificationSelectProjection::arguments,
         method: |matches| {
             NotificationSelectProjection::from_matches(matches).map(Method::NotificationMarkRead)
+        },
+    },
+    Leaf {
+        name: "accept",
+        about: "Run the action of a log entry and mark it accepted",
+        id: "cli:notification:accept",
+        arguments: NotificationAcceptProjection::arguments,
+        method: |matches| {
+            NotificationAcceptProjection::from_matches(matches).map(Method::NotificationAccept)
         },
     },
 ];
@@ -203,6 +214,36 @@ mod tests {
                 vec!["mark-read", "--source", "jobs"],
                 serde_json::json!({"id":"cli:notification:mark-read", "method":"notification.mark_read", "params":{"source":"jobs"}}),
             ),
+            (
+                vec![
+                    "add",
+                    "deploy ready",
+                    "--",
+                    "deploy",
+                    "--now",
+                    "--action-label",
+                    "x",
+                ],
+                serde_json::json!({"id":"cli:notification:add", "method":"notification.add", "params":{"title":"deploy ready", "action":{"argv":["deploy", "--now", "--action-label", "x"]}}}),
+            ),
+            (
+                vec![
+                    "add",
+                    "--literal",
+                    "--action-label",
+                    "open",
+                    "--workspace",
+                    "w2",
+                    "--",
+                    "open-thing",
+                    "two words",
+                ],
+                serde_json::json!({"id":"cli:notification:add", "method":"notification.add", "params":{"title":"--literal", "workspace_id":"w2", "action":{"argv":["open-thing", "two words"], "label":"open"}}}),
+            ),
+            (
+                vec!["accept", "n3"],
+                serde_json::json!({"id":"cli:notification:accept", "method":"notification.accept", "params":{"id":"n3"}}),
+            ),
         ] {
             assert_eq!(
                 serde_json::to_value(parse(&args).unwrap()).unwrap(),
@@ -216,11 +257,44 @@ mod tests {
             vec!["list", "extra"],
             vec!["dismiss", "n3"],
             vec!["mark-read", "--id"],
+            vec!["accept"],
+            vec!["accept", "n3", "extra"],
         ] {
             assert!(
                 matches!(parse(&args), Err(ParseError::Clap(error)) if error.exit_code() == 2),
                 "{args:?}"
             );
         }
+    }
+
+    #[test]
+    fn notification_add_action_needs_a_command_and_documents_its_label() {
+        for args in [
+            vec!["add", "title", "--action-label", "open"],
+            vec!["add", "title", "--action-label", "open", "--"],
+        ] {
+            assert!(
+                matches!(parse(&args), Err(ParseError::Usage(message)) if message.contains("--action-label")),
+                "{args:?}"
+            );
+        }
+        // An empty command after -- adds a plain entry.
+        assert_eq!(
+            serde_json::to_value(parse(&["add", "title", "--"]).unwrap()).unwrap()["params"],
+            serde_json::json!({"title":"title"})
+        );
+
+        // Clients detect action support by finding the option in this help text.
+        let mut add = command()
+            .find_subcommand("add")
+            .expect("add command")
+            .clone();
+        let help = add.render_long_help().to_string();
+        assert!(help.contains("--action-label"), "{help}");
+        assert!(help.contains("[ARGV]..."), "{help}");
+        let Err(ParseError::Clap(error)) = parse(&["add", "title", "--help"]) else {
+            panic!("expected help");
+        };
+        assert!(error.to_string().contains("--action-label"));
     }
 }
