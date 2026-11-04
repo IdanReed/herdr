@@ -262,6 +262,90 @@ fn popup_owns_keys_text_paste_and_mouse_before_shell_controls() {
 }
 
 #[test]
+fn popup_receives_the_prefix_mode_keys_and_direct_command_bindings() {
+    let config: Config = toml::from_str(
+        r#"
+[ui.sidebar.notifications]
+enabled = true
+
+[keys]
+notification_mode = "ctrl+n"
+
+[[keys.command]]
+key = "ctrl+e"
+type = "shell"
+command = "echo direct"
+"#,
+    )
+    .expect("config");
+    assert!(config.collect_diagnostics().is_empty());
+    let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+    let app = crate::app::App::new(
+        &config,
+        crate::app::AppPolicy::TEST,
+        None,
+        api_rx,
+        crate::api::EventHub::default(),
+    );
+    let mut projection = snapshot();
+    projection.commands = app.client_shell_command_manifest();
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(projection));
+    state.set_pane_surface(surface());
+
+    // Prefix, ctrl+p, ctrl+t, ctrl+s, ctrl+a, ctrl+n, and ctrl+e, as legacy bytes.
+    let bound: [&[u8]; 7] = [
+        b"\x02", b"\x10", b"\x14", b"\x13", b"\x01", b"\x0e", b"\x05",
+    ];
+    // Without a popup, Herdr keeps each of these keys from the pane.
+    for bytes in bound {
+        let outcome = state.handle_input_bytes(bytes);
+        assert!(
+            outcome.requests.is_empty(),
+            "{bytes:?} reached the pane: {:?}",
+            outcome.requests
+        );
+        state.mode = ClientShellMode::Terminal;
+        state.overlay = None;
+    }
+
+    state.set_pane_surface(surface_with_popup());
+    state.compose(106, 20).expect("popup frame");
+    let reported = [
+        'b', 'p', 't', 's', 'a', 'n', 'e', // the same keys as a kitty host reports them
+    ]
+    .map(|character| {
+        vec![RawInputEvent::Key(crate::input::TerminalKey::new(
+            KeyCode::Char(character),
+            KeyModifiers::CONTROL,
+        ))]
+    });
+    let inputs = bound
+        .iter()
+        .map(|bytes| crate::raw_input::parse_framed_input(bytes))
+        .chain(reported)
+        // The prefix and then a prefix binding, which would open the help overlay.
+        .chain([crate::raw_input::parse_framed_input(b"\x02?")]);
+    for events in inputs {
+        let label = format!("{events:?}");
+        let outcome = state.handle_raw_events(events);
+        assert!(outcome.actions.is_empty(), "{label}: {:?}", outcome.actions);
+        assert!(!outcome.requests.is_empty(), "{label} was dropped");
+        assert!(
+            outcome.requests.iter().all(|request| matches!(
+                request,
+                ClientMessage::ClientShellPopupInput { terminal_id, .. }
+                    if terminal_id == "terminal-popup"
+            )),
+            "{label}: {:?}",
+            outcome.requests
+        );
+        assert_eq!(state.mode, ClientShellMode::Terminal, "{label}");
+        assert!(state.overlay.is_none(), "{label}");
+    }
+}
+
+#[test]
 fn popup_transition_dismisses_client_overlays_and_restores_pane_input_after_close() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     state.set_snapshot(Box::new(snapshot()));
