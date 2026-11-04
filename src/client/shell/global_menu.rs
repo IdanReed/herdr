@@ -10,6 +10,60 @@ pub(super) fn global_menu_attention(snapshot: &ClientShellSnapshot) -> bool {
     snapshot.update_available.is_some() || snapshot.integration_updates_available
 }
 
+/// Width of the menu button: `  menu`, or `  ● menu` while the menu has news.
+pub(super) fn menu_button_width(snapshot: &ClientShellSnapshot) -> u16 {
+    if global_menu_attention(snapshot) {
+        8
+    } else {
+        6
+    }
+}
+
+/// Draws the menu button flush with the right end of `row` and records it as
+/// the launcher.
+pub(super) fn render_menu_button(
+    buffer: &mut Buffer,
+    row: Rect,
+    snapshot: &ClientShellSnapshot,
+    palette: &Palette,
+    background: Option<ratatui::style::Color>,
+    hits: &mut ShellHitMap,
+) {
+    let width = menu_button_width(snapshot).min(row.width);
+    let rect = Rect::new(
+        row.right().saturating_sub(width),
+        row.y,
+        width,
+        u16::from(row.height > 0 && width > 0),
+    );
+    hits.global_launcher = rect;
+    if rect.is_empty() {
+        return;
+    }
+    let base = background.map_or_else(Style::default, |background| Style::default().bg(background));
+    let put = |buffer: &mut Buffer, x: u16, text: &str, style: Style| {
+        super::render::put_text(
+            buffer,
+            x,
+            rect.y,
+            rect.right().saturating_sub(x),
+            text,
+            style,
+        );
+    };
+    put(buffer, rect.x, &" ".repeat(usize::from(width)), base);
+    let label_x = rect.right().saturating_sub(4);
+    if global_menu_attention(snapshot) {
+        put(
+            buffer,
+            label_x.saturating_sub(2),
+            "●",
+            base.fg(palette.accent).add_modifier(Modifier::BOLD),
+        );
+    }
+    put(buffer, label_x, "menu", base.fg(palette.overlay0));
+}
+
 pub(super) fn global_menu_item_has_badge(
     snapshot: &ClientShellSnapshot,
     action: ClientGlobalMenuAction,

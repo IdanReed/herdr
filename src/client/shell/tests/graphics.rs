@@ -227,7 +227,8 @@ fn endpoint_notice_and_multiline_diagnostic_cover_the_actual_rows() {
     assert_graphics_cover(&mut state, rect, 106, 20);
     state.visible_endpoint_notice = None;
     state.config_diagnostic = Some("first\nsecond warning".into());
-    assert_graphics_cover(&mut state, Rect::new(90, 1, 16, 1), 106, 20);
+    // The diagnostic ends left of the six-column menu button.
+    assert_graphics_cover(&mut state, Rect::new(84, 1, 16, 1), 106, 20);
 }
 
 #[test]

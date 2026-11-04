@@ -82,6 +82,7 @@ impl ClientShellState {
             reveal_navigation_workspace: &mut self.reveal_navigation_workspace,
             dragged_workspace_id: None,
             workspace_drop_indicator_row: None,
+            sidebar_menu: true,
         };
         if let Some(snapshot) = local_snapshot {
             render::render_sidebar(
@@ -243,6 +244,7 @@ impl ClientShellState {
                 reveal_navigation_workspace: &mut self.reveal_navigation_workspace,
                 dragged_workspace_id,
                 workspace_drop_indicator_row,
+                sidebar_menu: layout.tab_bar.height == 0,
             },
         );
         self.hits.panes = surface
@@ -477,8 +479,15 @@ impl ClientShellState {
             let cursor = frame.cursor.clone();
             let mut composed = frame.to_ratatui_buffer()?;
             if let Some(diagnostic) = self.config_diagnostic.as_deref() {
+                // Keep the menu button at the right end of the top row in view.
+                let launcher = self.hits.global_launcher;
+                let right = if launcher.y == 0 && launcher.width > 0 && launcher.right() == cols {
+                    launcher.x
+                } else {
+                    cols
+                };
                 let diagnostic_area = if layout.mobile_header.is_empty() {
-                    Rect::new(0, 0, cols, rows)
+                    Rect::new(0, 0, right, rows)
                 } else {
                     layout.pane_surface
                 };

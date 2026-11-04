@@ -313,6 +313,8 @@ The sidebar is the main Herdr dashboard. Search `ui.` in the [Config reference](
 
 The Agent panel lists agents under a heading for each space, in the order of the Spaces list. Inside each space, agents that need attention come first: blocked, then done, working, and idle, with the most recent state change first among equals. Agent navigation and the numbered agent keybindings follow the same order. A custom agent view from `agent.view.set` replaces the order and shows a flat list. `ui.agent_panel_sort` and `ui.sidebar.agents.group_by_space` are retired: Herdr still accepts them so older configs load, and ignores them.
 
+The `menu` button sits at the right end of the tab row. It shows `●` when an update or integration update is waiting. When the tab row is hidden, the button moves to the right end of the Spaces header. The Spaces section has no `new` button; create a space with the `new_workspace` keybinding (`prefix+shift+n` by default) or `herdr workspace create`.
+
 `ui.pane_borders` accepts `"auto"` (the default, borders only for split panes), `"always"` (also frame a single pane), or `"off"`. A single-pane frame requires `ui.pane_outer_borders = true`, because all its edges are outer edges. Existing boolean values remain valid: `true` means `"auto"` and `false` means `"off"`.
 
 Set `tab_bar_position = "bottom"` under `[ui]` to place the desktop tab row below the terminal panes. Prefix, Navigate, Copy, Resize, Pane, Tab, Spaces, and Agents mode bars temporarily replace the bottom tab row while active. The default is `"top"`.

@@ -271,6 +271,8 @@ pub(super) struct ShellRenderState<'a> {
     pub(super) reveal_navigation_workspace: &'a mut bool,
     pub(super) dragged_workspace_id: Option<&'a str>,
     pub(super) workspace_drop_indicator_row: Option<u16>,
+    /// Draw the menu button in the sidebar header because no tab row shows it.
+    pub(super) sidebar_menu: bool,
 }
 
 pub(super) fn render_shell(
@@ -351,7 +353,6 @@ pub(super) fn render_shell(
         hits.agent_scrollbar = Rect::default();
         hits.notification_log.clear();
         hits.notification_log_scrollbar = Rect::default();
-        hits.new_workspace = Rect::default();
         hits.machines.clear();
         hits.workspaces.clear();
         hits.agents.clear();

@@ -111,7 +111,15 @@ pub(crate) fn render_global_menu(
         .right()
         .saturating_sub(width)
         .min(screen.right().saturating_sub(width));
-    let y = launcher.y.saturating_sub(height).max(screen.y);
+    // Open above a launcher at the bottom of the screen, below one at the top.
+    let y = if launcher.y.saturating_sub(screen.y) >= height {
+        launcher.y - height
+    } else {
+        launcher
+            .bottom()
+            .min(screen.bottom().saturating_sub(height))
+            .max(screen.y)
+    };
     let rect = Rect::new(x, y, width, height);
     let inner = panel(buffer, rect, palette.accent, palette.panel_bg)?;
     let mut rows = Vec::new();

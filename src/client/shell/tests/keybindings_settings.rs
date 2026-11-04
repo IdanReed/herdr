@@ -72,22 +72,6 @@ fn shell_new_controls_use_the_same_client_action_routes_as_keybinds() {
     state.set_pane_surface(surface());
     state.compose(106, 20).expect("composed frame");
 
-    let new_workspace = state.hits.new_workspace;
-    let create_workspace =
-        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
-            kind: MouseEventKind::Down(MouseButton::Left),
-            column: new_workspace.x + 1,
-            row: new_workspace.y,
-            modifiers: KeyModifiers::empty(),
-        })]);
-    let [ClientShellAction::Endpoint { request, .. }] = &create_workspace.actions[..] else {
-        panic!("new workspace click should use the endpoint API");
-    };
-    assert!(matches!(
-        request.method,
-        crate::api::schema::Method::WorkspaceCreate(_)
-    ));
-
     let new_tab = state.hits.new_tab;
     let open_new_tab =
         state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {

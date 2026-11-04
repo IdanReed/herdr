@@ -16,6 +16,28 @@ pub(crate) fn render_tab_bar(
 ) {
     let palette = &config.palette;
     buffer.set_style(area, Style::default().bg(palette.panel_bg));
+    let mouse_chrome = config.mouse_capture;
+    // The menu button takes the right end of the row; the status area and the
+    // tabs share the rest.
+    let menu_width = if mouse_chrome {
+        super::super::global_menu::menu_button_width(snapshot).min(area.width)
+    } else {
+        0
+    };
+    if menu_width > 0 {
+        super::super::global_menu::render_menu_button(
+            buffer,
+            area,
+            snapshot,
+            palette,
+            Some(palette.panel_bg),
+            hits,
+        );
+    }
+    let area = Rect {
+        width: area.width.saturating_sub(menu_width),
+        ..area
+    };
     let tabs = snapshot
         .tabs
         .iter()
@@ -29,7 +51,6 @@ pub(crate) fn render_tab_bar(
         })
         .collect::<Vec<_>>();
     let content = tab_bar_content_area(snapshot, area);
-    let mouse_chrome = config.mouse_capture;
     let new_tab_width = if mouse_chrome { NEW_TAB_WIDTH } else { 0 };
     let desired_total = desired_widths
         .iter()

@@ -110,7 +110,6 @@ pub(super) struct ShellHitMap {
     /// Rows that the section divider's split ratio divides.
     pub(super) sidebar_section_span: Rect,
     pub(super) sidebar_toggle: Rect,
-    pub(super) new_workspace: Rect,
     pub(super) new_tab: Rect,
     pub(super) tab_scroll_left: Rect,
     pub(super) tab_scroll_right: Rect,
@@ -1449,6 +1448,8 @@ impl ClientShellState {
                             || left.zoomed != right.zoomed
                     })
                 || render::tab_bar_status_width(current) != render::tab_bar_status_width(&snapshot)
+                || super::global_menu::menu_button_width(current)
+                    != super::global_menu::menu_button_width(&snapshot)
         });
         if self
             .snapshot

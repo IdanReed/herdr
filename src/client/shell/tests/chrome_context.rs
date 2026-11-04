@@ -87,10 +87,13 @@ fn focused_last_overflow_tab_shows_its_full_label() {
         let frame = state
             .compose(133, 20)
             .expect("reporter's overflowing strip");
+        // The menu button takes the last six columns of the 107-column tab row.
         assert_eq!(
             state.hits.new_tab.right() - state.hits.tab_scroll_left.x,
-            107
+            101
         );
+        assert_eq!(state.hits.global_launcher.x, state.hits.new_tab.right());
+        assert_eq!(state.hits.global_launcher.right(), 133);
         let rect = state
             .hits
             .tabs
@@ -525,5 +528,112 @@ fn close_confirmation_error_becomes_client_owned_overlay_and_stable_workspace_cl
         &request.method,
         crate::api::schema::Method::WorkspaceClose(params)
             if params.workspace_id == "ws_1" && !params.close_group
+    ));
+}
+
+fn click_at(state: &mut ClientShellState, rect: Rect) -> ClientShellInput {
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: rect.x,
+        row: rect.y,
+        modifiers: KeyModifiers::empty(),
+    })])
+}
+
+#[test]
+fn menu_button_sits_at_the_right_end_of_the_tab_row_and_opens_below_it() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    let frame = state.compose(106, 30).expect("shell frame");
+    let launcher = state.hits.global_launcher;
+    assert_eq!((launcher.y, launcher.right(), launcher.width), (0, 106, 6));
+    let rows = frame_rows(&frame);
+    assert!(rows[0].ends_with("  menu"), "{}", rows[0]);
+    // The spaces section no longer has a footer with buttons.
+    assert!(!rows.iter().any(|row| row.contains(" new")), "{rows:#?}");
+    assert_eq!(
+        state.hits.workspace_body.bottom(),
+        state.hits.sidebar_section_divider.y
+    );
+
+    assert!(click_at(&mut state, launcher).repaint);
+    let menu = state.compose(106, 30).expect("global menu");
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::GlobalMenu(_))
+    ));
+    let first_row = state.hits.global_menu_rows.first().expect("menu rows").0;
+    assert!(first_row.y > launcher.y, "{first_row:?}");
+    assert!(frame_rows(&menu)[0].ends_with("  menu"));
+    // Clicking the button again closes the menu.
+    click_at(&mut state, launcher);
+    assert!(state.overlay.is_none());
+}
+
+#[test]
+fn menu_button_opens_above_a_bottom_tab_row() {
+    let mut config = Config::default();
+    config.ui.tab_bar_position = crate::config::TabBarPositionConfig::Bottom;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.compose(106, 30).expect("shell frame");
+    let launcher = state.hits.global_launcher;
+    assert_eq!((launcher.y, launcher.right()), (29, 106));
+    click_at(&mut state, launcher);
+    state.compose(106, 30).expect("global menu");
+    let last_row = state.hits.global_menu_rows.last().expect("menu rows").0;
+    assert!(last_row.y < launcher.y, "{last_row:?}");
+}
+
+#[test]
+fn menu_button_moves_to_the_spaces_header_without_a_tab_row() {
+    let mut config = Config::default();
+    config.ui.hide_tab_bar_when_single_tab = true;
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    let mut attention = snapshot();
+    attention.integration_updates_available = true;
+    state.set_snapshot(Box::new(attention));
+    state.set_pane_surface(surface());
+    let frame = state.compose(106, 30).expect("shell frame");
+    let launcher = state.hits.global_launcher;
+    assert_eq!(launcher.y, 0);
+    assert_eq!(launcher.width, 8);
+    assert_eq!(launcher.right(), state.hits.sidebar_divider.x);
+    let header = frame_rows(&frame)[0]
+        .chars()
+        .take(usize::from(launcher.right()))
+        .collect::<String>();
+    assert!(header.starts_with(" spaces"), "{header}");
+    assert!(header.ends_with("  ● menu"), "{header}");
+    click_at(&mut state, launcher);
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::GlobalMenu(_))
+    ));
+}
+
+#[test]
+fn config_diagnostics_leave_the_menu_button_visible() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.config_diagnostic = Some("config: issues found\nsecond line".into());
+    let frame = state.compose(106, 30).expect("shell frame");
+    let launcher = state.hits.global_launcher;
+    assert_eq!((launcher.y, launcher.right()), (0, 106));
+    let rows = frame_rows(&frame);
+    // The badge ends where the button starts, on every line it takes.
+    assert!(
+        rows[0].ends_with(" config: issues found   menu"),
+        "{}",
+        rows[0]
+    );
+    assert!(rows[1].ends_with(" second line       "), "{}", rows[1]);
+    click_at(&mut state, launcher);
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::GlobalMenu(_))
     ));
 }
