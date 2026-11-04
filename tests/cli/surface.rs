@@ -559,6 +559,57 @@ fn api_snapshot_prints_live_session_snapshot() {
 }
 
 #[test]
+fn api_call_sends_a_raw_request_and_prints_the_response() {
+    let base = unique_test_dir();
+    fs::create_dir_all(&base).unwrap();
+    let socket_path = base.join("herdr.sock");
+    let listener = UnixListener::bind(&socket_path).unwrap();
+
+    let server = thread::spawn({
+        let socket_path = socket_path.clone();
+        move || {
+            let (mut stream, line) = accept_fake_cli_operation(&listener);
+            let request: serde_json::Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(request["id"], "cli:api:call");
+            assert_eq!(request["method"], "workspace.focus");
+            assert_eq!(request["params"]["workspace_id"], "w2");
+
+            let response = serde_json::json!({
+                "id": "cli:api:call",
+                "result": {
+                    "type": "ok",
+                    "marker": "call-passthrough"
+                }
+            });
+            writeln!(stream, "{response}").unwrap();
+            stream.flush().unwrap();
+            let _ = fs::remove_file(socket_path);
+        }
+    });
+
+    let value = run_cli_json(
+        &socket_path,
+        &["api", "call", "workspace.focus", r#"{"workspace_id":"w2"}"#],
+    );
+
+    assert_eq!(value["result"]["marker"], "call-passthrough");
+    server.join().unwrap();
+    cleanup_test_base(&base);
+}
+
+#[test]
+fn api_call_rejects_unknown_methods_without_connecting() {
+    let output = Command::new(env!("CARGO_BIN_EXE_herdr"))
+        .args(["api", "call", "workspace.nope"])
+        .env("HERDR_SOCKET_PATH", "/nonexistent/herdr.sock")
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unknown API method: workspace.nope"));
+}
+
+#[test]
 fn api_schema_output_writes_bundled_schema_to_file() {
     let base = unique_test_dir();
     fs::create_dir_all(&base).unwrap();

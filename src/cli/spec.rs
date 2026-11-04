@@ -187,6 +187,16 @@ fn server_command() -> Command {
 fn api_command() -> Command {
     Command::new("api")
         .about("Inspect socket API metadata and live runtime state")
+        .subcommand(
+            Command::new("call")
+                .about("Send one socket API request and print the JSON response")
+                .arg(required("method", "METHOD"))
+                .arg(
+                    Arg::new("params")
+                        .value_name("PARAMS_JSON")
+                        .help("JSON object of params, or - to read it from stdin"),
+                ),
+        )
         .subcommand(Command::new("snapshot").about("Print the live session snapshot"))
         .subcommand(
             Command::new("schema")

@@ -128,6 +128,12 @@ records. Full repo worktree discovery remains `worktree.list`.
 From the CLI, `herdr api snapshot` prints the live `session.snapshot` response
 as JSON for clients and agents that want a simple bootstrap command.
 
+`herdr api call <METHOD> [PARAMS_JSON | -]` sends any request in this schema
+through the CLI and prints the JSON response, for example
+`herdr api call layout.apply - < layout.json`. It validates the method and
+params locally before connecting and uses the same socket or Windows named pipe
+as other CLI commands, so scripts do not need their own transport code.
+
 Pane control methods use public pane ids such as `w1:p1`. Methods whose
 schema makes `pane_id` optional use the server's active focused pane when it is
 omitted. `pane.move` always requires the source `pane_id`.

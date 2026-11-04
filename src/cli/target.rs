@@ -300,6 +300,8 @@ fn validate_machine_command(args: &[String]) -> Result<(), String> {
                         .iter()
                         .any(|arg| arg == "--file" || arg.starts_with("--file=")))
         }
+        // `api call` stays local: a raw passthrough would bypass the command
+        // guards above, such as the refusal to forward live handoff.
         "api" => subcommand == "snapshot",
         "status" => subcommand == "server",
         "plugin" => matches!(
@@ -452,6 +454,7 @@ mod tests {
             &["plugin", "install", "./plugin"],
             &["integration", "install", "pi"],
             &["api", "schema", "--output", "schema.json"],
+            &["api", "call", "server.live_handoff", "{}"],
             &["status", "client"],
         ] {
             let mut input = args(&["herdr"]);
